@@ -95,17 +95,26 @@ export async function onRequest(context){
       return json({token:await token({id:out.id,role:'partner',exp:Math.floor(Date.now()/1000)+28800},env.IOS_SESSION_SECRET),user:publicPartner(out),role:'partner'});
     }
 
-    /* ---------- everything below requires a session ---------- */
+    /* ---------- everything below requires a live database-validated session ---------- */
     let s=await session(request,env.IOS_SESSION_SECRET);
     if(!s)return fail('Please sign in.',401);
     const adminOnly=()=>fail('Administrator access required.',403);
     if(s.role!=='admin'&&s.role!=='partner')return fail('Invalid session.',403);
+
+    let currentUser=null;
+    if(s.role==='admin'){
+      let [admin]=await db(env,`admins?id=eq.${s.id}&select=id,name,email`);
+      if(!admin)return fail('This administrator account no longer exists.',403);
+      currentUser=admin;
+    }
     // partner sessions stay valid only while the account exists & keeps access
     if(s.role==='partner'){
-      let [me]=await db(env,`partners?id=eq.${s.id}&select=id,login_access`);
+      let [me]=await db(env,`partners?id=eq.${s.id}&select=*`);
       if(!me)return fail('This agent account no longer exists.',403);
       if(!me.login_access)return fail('Login access is disabled for this agent account.',403);
+      currentUser=publicPartner(me);
     }
+    if(path==='auth/session'&&method==='GET')return json({role:s.role,user:currentUser});
 
     if(/^files\/[^/]+$/.test(path)&&method==='GET'){
       const id=path.split('/')[1];
