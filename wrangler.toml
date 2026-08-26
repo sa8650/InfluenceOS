@@ -1,0 +1,14 @@
+name = "influenceos"
+compatibility_date = "2026-08-05"
+pages_build_output_dir = "."
+
+# Dedicated R2 bucket for InfluenceOS proof files and Vaultium files.
+# Create this bucket in Cloudflare R2 before deploying, or change bucket_name.
+[[r2_buckets]]
+binding = "IOS_PROOF"
+bucket_name = "influenceos-proof-files"
+
+# Backward-compatible optional binding name. You can remove this block if you only use IOS_PROOF.
+# [[r2_buckets]]
+# binding = "VAULTIUM"
+# bucket_name = "influenceos-proof-files"

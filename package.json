@@ -1,0 +1,15 @@
+{
+  "name": "influenceos",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "InfluenceOS — independent partner, influencer, campaign and payout management platform.",
+  "scripts": {
+    "dev": "wrangler pages dev . --compatibility-date=2026-08-05 --ip 0.0.0.0",
+    "deploy": "wrangler pages deploy . --project-name=influenceos",
+    "check": "wrangler pages functions build --compatibility-date=2026-08-05"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
