@@ -76,6 +76,7 @@ function modal(html,cls=''){
 
 /* ═══════════ LANDING PAGE ═══════════ */
 function landing(){
+  document.body.classList.add('landing-mode');
   document.title='InfluenceOS | DoxTox';
   app.innerHTML=`
   <header class="land-head"><div class="in">
@@ -230,6 +231,7 @@ function agentLoginModal(){
 /* ═══════════ ADMIN APP ═══════════ */
 let aView='dashboard';
 function adminApp(){
+  document.body.classList.remove('landing-mode');
   document.title='InfluenceOS — Admin';
   const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
   app.innerHTML=`<div class="app">
@@ -842,6 +844,7 @@ function aSettings(main){
 /* ═══════════ PARTNER (AGENT) APP ═══════════ */
 let pView='profile';
 function partnerApp(){
+  document.body.classList.remove('landing-mode');
   document.title='InfluenceOS — Agent';
   const nav=[['profile','◉','Profile'],['team','☰','My Team'],['allocations','◌','Allocations'],['contribute','⇧','Contribute'],['projects','◆','Projects'],['payments','$','Payments'],['performance','◫','Performance'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
   app.innerHTML=`<div class="app">
