@@ -70,8 +70,8 @@ For local development, copy `.env.example` to `.dev.vars` and fill in the values
 
 ```toml
 [[r2_buckets]]
-binding = "IOS_PROOF"
-bucket_name = "influenceos-proof-files"
+binding = "VAULTIUM"
+bucket_name = "emsvaultium"
 ```
 
 Create the bucket in Cloudflare R2 or change `bucket_name` to your existing bucket name.
