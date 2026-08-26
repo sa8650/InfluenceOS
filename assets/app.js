@@ -16,7 +16,12 @@ const upload=async(path,formData)=>{
   let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Upload failed');return x;
 };
 const mutate=api;
-const loading=main=>{main.innerHTML='<p class="muted">Loading fresh data from database…</p>'};
+const loaderHtml=(text='Loading fresh data from database…')=>`<div class="loader-wrap"><div class="loader">
+    <span class="bar"></span>
+    <span class="bar"></span>
+    <span class="bar"></span>
+  </div>${text?`<div class="loader-text">${esc(text)}</div>`:''}</div>`;
+const loading=main=>{main.innerHTML=loaderHtml()};
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2});
 const num=v=>Number(v)||0;
@@ -77,6 +82,7 @@ function modal(html,cls=''){
 /* ═══════════ LANDING PAGE ═══════════ */
 function landing(){
   document.body.classList.add('landing-mode');
+  document.body.classList.remove('dashboard-mode');
   document.title='InfluenceOS | DoxTox';
   app.innerHTML=`
   <header class="land-head"><div class="in">
@@ -232,6 +238,7 @@ function agentLoginModal(){
 let aView='dashboard';
 function adminApp(){
   document.body.classList.remove('landing-mode');
+  document.body.classList.add('dashboard-mode');
   document.title='InfluenceOS — Admin';
   const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
   app.innerHTML=`<div class="app">
@@ -243,7 +250,7 @@ function adminApp(){
       <div class="nav"><button data-v="settings"><span class="icon">⚙</span> Settings</button></div>
       <div class="sidebottom"><button id="outBtn">⏻ Logout</button></div>
     </aside>
-    <main class="main" id="main"><p class="muted">Loading…</p></main>
+    <main class="main" id="main">${loaderHtml("Loading…")}</main>
   </div>`;
   document.querySelectorAll('.nav button[data-v]').forEach(b=>b.onclick=()=>{aView=b.dataset.v;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));renderAdmin()});
   $('#outBtn').onclick=logout;
@@ -684,7 +691,7 @@ function renderAContribute(main,rows){
 /* ---------- ADMIN: PARTNER VIEW MODAL (details + edit history) ---------- */
 function partnerViewModal(p){
   const ov=modal(`<h2>${esc(p.name)}</h2><p>Agent #${esc(p.partner_code)} — profile details &amp; edit history</p>
-    <div id="pvBody"><p class="muted">Loading…</p></div>
+    <div id="pvBody">${loaderHtml("Loading…")}</div>
     <div class="modal-actions"><button class="btn" data-close>Close</button></div>`);
   api(`partners/${p.id}/logs`).then(d=>{
     const me=d.partner,accts=me.accounts||[];
@@ -764,7 +771,7 @@ function renderVaultium(main,rows){
 /* ---------- ADMIN: HELPDESK ---------- */
 let hdPoll=null;
 async function aHelpdesk(main){
-  main.innerHTML='<p class="muted">Loading…</p>';
+  main.innerHTML=loaderHtml('Loading…');
   const render=async()=>{
     const d=await api('helpdesk');
     if(aView!=='helpdesk')return;
@@ -790,7 +797,7 @@ function renderHelpdeskThreads(main,threads){
 }
 function helpdeskChatModal(partnerId){
   const ov=modal(`<h2 id="hcTitle">Conversation</h2><p>Messages are continuous and never cleared.</p>
-    <div class="chat" id="hcLog"><p class="muted">Loading…</p></div>
+    <div class="chat" id="hcLog">${loaderHtml("Loading…")}</div>
     <div class="chatbar"><input id="hcInput" placeholder="Write a reply…"><button class="btn dark" id="hcSend">Send</button></div>`);
   const log=ov.querySelector('#hcLog');
   const paint=(partner,messages)=>{
@@ -845,6 +852,7 @@ function aSettings(main){
 let pView='profile';
 function partnerApp(){
   document.body.classList.remove('landing-mode');
+  document.body.classList.add('dashboard-mode');
   document.title='InfluenceOS — Agent';
   const nav=[['profile','◉','Profile'],['team','☰','My Team'],['allocations','◌','Allocations'],['contribute','⇧','Contribute'],['projects','◆','Projects'],['payments','$','Payments'],['performance','◫','Performance'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
   app.innerHTML=`<div class="app">
@@ -854,7 +862,7 @@ function partnerApp(){
       <div class="nav">${nav.map(([k,i,l])=>`<button data-v="${k}" class="${k===pView?'active':''}"><span class="icon">${i}</span> ${l}</button>`).join('')}</div>
       <div class="sidebottom"><button id="outBtn">⏻ Logout</button></div>
     </aside>
-    <main class="main" id="main"><p class="muted">Loading…</p></main>
+    <main class="main" id="main">${loaderHtml("Loading…")}</main>
   </div>`;
   document.querySelectorAll('.nav button[data-v]').forEach(b=>b.onclick=()=>{pView=b.dataset.v;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));renderPartner()});
   $('#outBtn').onclick=logout;
@@ -1280,7 +1288,7 @@ function contributeModal(overview){
 /* ---------- AGENT: HELPDESK ---------- */
 let phdPoll=null;
 async function pHelpdesk(main){
-  main.innerHTML='<p class="muted">Loading…</p>';
+  main.innerHTML=loaderHtml('Loading…');
   const render=async()=>{
     const d=await api('helpdesk');
     if(pView!=='helpdesk')return;
@@ -1311,7 +1319,9 @@ async function pHelpdesk(main){
 
 async function boot(){
   if(state?.token){
-    app.innerHTML='<div class="empty" style="padding:45px">Connecting to database…</div>';
+    document.body.classList.remove('landing-mode');
+    document.body.classList.add('dashboard-mode');
+    app.innerHTML=loaderHtml('Connecting to database…');
     try{
       const fresh=await api('auth/session');
       save({token:state.token,role:fresh.role,user:fresh.user});
