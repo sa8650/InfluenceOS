@@ -2,25 +2,21 @@
 const $=s=>document.querySelector(s), app=$('#app');
 let state=JSON.parse(localStorage.getItem('ios.session')||'null');
 
+const freshUrl=path=>'/api/ios/'+path+((path.includes('?')?'&':'?')+'_fresh='+Date.now());
 const api=async(path,opt={})=>{
-  let r=await fetch('/api/ios/'+path,{...opt,headers:{'content-type':'application/json',...(state?.token?{authorization:'Bearer '+state.token}:{}),...(opt.headers||{})}});
+  const method=(opt.method||'GET').toUpperCase();
+  const url=method==='GET'?freshUrl(path):'/api/ios/'+path;
+  let r=await fetch(url,{cache:'no-store',...opt,headers:{'content-type':'application/json','cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{}),...(opt.headers||{})}});
   let x=await r.json().catch(()=>({}));
   if(!r.ok)throw Error(x.error||'Request failed');
   return x;
 };
 const upload=async(path,formData)=>{
-  let r=await fetch('/api/ios/'+path,{method:'POST',headers:{...(state?.token?{authorization:'Bearer '+state.token}:{})},body:formData});
+  let r=await fetch('/api/ios/'+path,{method:'POST',cache:'no-store',headers:{'cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{})},body:formData});
   let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Upload failed');return x;
 };
-const viewCache={};
-const dropCache=()=>{for(const k in viewCache)delete viewCache[k]};
-const mutate=async(path,opt={})=>{const r=await api(path,opt);dropCache();return r};
-const warm=()=>{
-  ['overview','partners','projects','performance','contributions'].forEach(k=>{if(!(k in viewCache))api(k).then(d=>viewCache[k]=d).catch(()=>{})});
-  if(!('allocations' in viewCache))Promise.all([api('allocations'),api('projects'),api('partners'),api('team-allocations')]).then(b=>viewCache.allocations={allocs:b[0],projects:b[1],partners:b[2],team:b[3]}).catch(()=>{});
-  if(!('payments' in viewCache))Promise.all([api('payments'),api('partners'),api('allocations'),api('withdrawals')]).then(b=>viewCache.payments={payments:b[0],partners:b[1],allocations:b[2],withdrawals:b[3]}).catch(()=>{});
-};
-const typing=main=>main.contains(document.activeElement)&&/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
+const mutate=api;
+const loading=main=>{main.innerHTML='<p class="muted">Loading fresh data from database…</p>'};
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2});
 const num=v=>Number(v)||0;
@@ -31,7 +27,7 @@ const fmtDT=d=>{const x=new Date(d);return isNaN(x)?String(d||''):x.toLocaleStri
 const fmtSize=b=>{const n=Number(b)||0;return n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B'};
 const openFile=async(id,name,download)=>{
   try{
-    const r=await fetch('/api/ios/files/'+id,{headers:{...(state?.token?{authorization:'Bearer '+state.token}:{})}});
+    const r=await fetch('/api/ios/files/'+id,{cache:'no-store',headers:{'cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{})}});
     if(!r.ok){const x=await r.json().catch(()=>({}));throw Error(x.error||'Could not open file')}
     const blob=await r.blob();const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';
@@ -271,9 +267,9 @@ async function renderAdmin(){
 
 /* ---------- ADMIN: DASHBOARD ---------- */
 async function aDashboard(main){
-  if(viewCache.overview)renderDashboard(main,viewCache.overview);else main.innerHTML='<p class="muted">Loading…</p>';
-  const d=await api('overview');viewCache.overview=d;
-  if(!typing(main))renderDashboard(main,d);
+  loading(main);
+  const d=await api('overview');
+  renderDashboard(main,d);
 }
 function renderDashboard(main,d){
   const k=d.kpis;
@@ -309,15 +305,14 @@ function renderDashboard(main,d){
       </div>
     </div>
   </div>`;
-  warm();
 }
 
 /* ---------- ADMIN: PARTNERS ---------- */
 let pFilter={q:'',type:'',status:''};
 async function aPartners(main){
-  if(viewCache.partners)renderPartnersView(main,viewCache.partners);else main.innerHTML='<p class="muted">Loading…</p>';
-  const partners=await api('partners');viewCache.partners=partners;
-  if(!typing(main))renderPartnersView(main,partners);
+  loading(main);
+  const partners=await api('partners');
+  renderPartnersView(main,partners);
 }
 function renderPartnersView(main,partners){
   const list=partners.filter(p=>(!pFilter.type||p.type===pFilter.type)&&(!pFilter.status||p.status===pFilter.status)&&(!pFilter.q||(p.name+' '+p.email+' '+p.partner_code).toLowerCase().includes(pFilter.q.toLowerCase())));
@@ -397,9 +392,9 @@ function partnerModal(p,all){
 
 /* ---------- ADMIN: PROJECTS ---------- */
 async function aProjects(main){
-  if(viewCache.projects)renderProjectsView(main,viewCache.projects);else main.innerHTML='<p class="muted">Loading…</p>';
-  const projects=await api('projects');viewCache.projects=projects;
-  if(!typing(main))renderProjectsView(main,projects);
+  loading(main);
+  const projects=await api('projects');
+  renderProjectsView(main,projects);
 }
 function renderProjectsView(main,projects){
   main.innerHTML=`
@@ -445,11 +440,9 @@ function projectModal(p){
 /* ---------- ADMIN: PAYMENTS ---------- */
 let payFilterQ='';
 async function aPayments(main){
-  const c=viewCache.payments;
-  if(c&&c.payments)renderPaymentsView(main,c.payments,c.partners,c.allocations||[],c.withdrawals||[]);else main.innerHTML='<p class="muted">Loading…</p>';
+  loading(main);
   const [payments,partners,allocations,withdrawals]=await Promise.all([api('payments'),api('partners'),api('allocations'),api('withdrawals')]);
-  viewCache.payments={payments,partners,allocations,withdrawals};
-  if(!typing(main))renderPaymentsView(main,payments,partners,allocations,withdrawals);
+  renderPaymentsView(main,payments,partners,allocations,withdrawals);
 }
 function renderPaymentsView(main,payments,partners,allocations,withdrawals){
   withdrawals=withdrawals||[];
@@ -585,11 +578,9 @@ function paymentModal(partners,allocations,payments){
 /* ---------- ADMIN: ALLOCATIONS ---------- */
 let aFilterQ='';
 async function aAllocations(main){
-  const c=viewCache.allocations;
-  if(c&&c.allocs)renderAllocationsView(main,c.allocs,c.projects,c.partners,c.team||[]);else main.innerHTML='<p class="muted">Loading…</p>';
+  loading(main);
   const bundle=await Promise.all([api('allocations'),api('projects'),api('partners'),api('team-allocations')]);
-  viewCache.allocations={allocs:bundle[0],projects:bundle[1],partners:bundle[2],team:bundle[3]};
-  if(!typing(main))renderAllocationsView(main,bundle[0],bundle[1],bundle[2],bundle[3]);
+  renderAllocationsView(main,bundle[0],bundle[1],bundle[2],bundle[3]);
 }
 function renderAllocationsView(main,allocs,projects,partners,teamAllocs=[]){
   const list=allocs.filter(a=>!aFilterQ||(a.partner_name+' '+a.project_name).toLowerCase().includes(aFilterQ.toLowerCase()));
@@ -651,9 +642,9 @@ function allocationModal(a,projects,agreePartners){
 /* ---------- ADMIN: CONTRIBUTE ---------- */
 
 async function aContribute(main){
-  if(viewCache.contributions)renderAContribute(main,viewCache.contributions);else main.innerHTML='<p class="muted">Loading…</p>';
-  const rows=await api('contributions');viewCache.contributions=rows;
-  if(!typing(main))renderAContribute(main,rows);
+  loading(main);
+  const rows=await api('contributions');
+  renderAContribute(main,rows);
 }
 function renderAContribute(main,rows){
   const count=k=>rows.filter(r=>r.status===k).length;
@@ -733,9 +724,9 @@ function partnerViewModal(p){
 
 /* ---------- ADMIN: VAULTIUM (contribution files) ---------- */
 async function aVaultium(main){
-  if(viewCache.vaultium)renderVaultium(main,viewCache.vaultium);else main.innerHTML='<p class="muted">Loading…</p>';
-  const rows=await api('vaultium');viewCache.vaultium=rows;
-  if(!typing(main))renderVaultium(main,rows);
+  loading(main);
+  const rows=await api('vaultium');
+  renderVaultium(main,rows);
 }
 function renderVaultium(main,rows){
   const totalBytes=rows.reduce((a,f)=>a+num(f.file_size),0);
@@ -825,9 +816,9 @@ function updateHdBadge(n){
 /* ---------- ADMIN: PERFORMANCE ---------- */
 
 async function aPerformance(main){
-  if(viewCache.performance)renderPerformanceView(main,viewCache.performance);else main.innerHTML='<p class="muted">Loading…</p>';
-  const rows=await api('performance');viewCache.performance=rows;
-  if(!typing(main))renderPerformanceView(main,rows);
+  loading(main);
+  const rows=await api('performance');
+  renderPerformanceView(main,rows);
 }
 function renderPerformanceView(main,rows){
   main.innerHTML=`
@@ -882,11 +873,11 @@ async function renderPartner(){
   }catch(e){main.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
 }
 async function pProfile(main){
-  if(viewCache['me/profile'])renderPProfile(main,viewCache['me/profile']);else main.innerHTML='<p class="muted">Loading…</p>';
-  const me=await api('me/profile');viewCache['me/profile']=me;
-  if(!typing(main))renderPProfile(main,me);
+  loading(main);
+  const [me,payMethods]=await Promise.all([api('me/profile'),api('me/payment-methods')]);
+  renderPProfile(main,me,payMethods);
 }
-function renderPProfile(main,me){
+function renderPProfile(main,me,payMethods=[]){
   main.innerHTML=`
   <div class="top"><div class="title"><h1>My profile</h1><p>Your partner account information.</p></div>
   <div class="actions"><button class="btn" id="payMethodsBtn">Payment method</button><button class="btn dark" id="editProfile">Edit profile</button></div></div>
@@ -901,7 +892,7 @@ function renderPProfile(main,me){
     </div>
     <div class="section-head" style="margin-top:18px"><h2>Social accounts</h2></div>
     ${(me.accounts||[]).length?me.accounts.map(a=>`<div class="target-row"><b>${esc(a.label||'Account')}</b><span style="grid-column:2/5"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url)}</a></span></div>`).join(''):'<p class="muted" style="font-size:12px">No social accounts saved.</p>'}
-    <div id="payMethodsBox"><div class="section-head" style="margin-top:18px"><h2>Payment methods</h2></div><p class="muted" style="font-size:12px">Loading…</p></div>
+    <div id="payMethodsBox"></div>
   </div>`;
   const paintPayMethods=rows=>{
     const box=$('#payMethodsBox');if(!box)return;
@@ -919,7 +910,7 @@ function renderPProfile(main,me){
       try{await mutate('me/payment-methods/'+b.dataset.pmDel,{method:'DELETE'});toast('Payment method deleted.');paintPayMethods(await api('me/payment-methods'))}catch(e){toast(e.message)}
     });
   };
-  api('me/payment-methods').then(paintPayMethods).catch(()=>{const b=$('#payMethodsBox');if(b)b.innerHTML='<p class="muted" style="font-size:12px">Payment methods unavailable.</p>'});
+  paintPayMethods(payMethods);
   $('#payMethodsBtn').onclick=()=>paymentMethodModal(null,paintPayMethods);
   $('#editProfile').onclick=()=>{
     const accounts=(me.accounts&&me.accounts.length?me.accounts:[{label:'',url:''}]);
@@ -955,10 +946,10 @@ function renderPProfile(main,me){
   };
 }
 async function pOverview(main,view){
+  loading(main);
   const render=d=>{if(view==='projects')renderPProjects(main,d);else if(view==='payments')renderPPayments(main,d);else renderPPerformance(main,d)};
-  if(viewCache['me/overview'])render(viewCache['me/overview']);
-  const d=await api('me/overview');viewCache['me/overview']=d;
-  if(!typing(main))render(d);
+  const d=await api('me/overview');
+  render(d);
 }
 function renderPProjects(main,d){
     main.innerHTML=`<div class="top"><div class="title"><h1>My projects</h1><p>Projects allocated to your account.</p></div></div>
@@ -991,14 +982,13 @@ function renderPPayments(main,d){
       <td>${pill(WD_STATUS,w.status)}${w.status==='rejected'&&w.reject_reason?`<small class="muted" style="display:block;margin-top:3px">${esc(w.reject_reason)}</small>`:''}</td>
     </tr>`).join(''):'<tr><td colspan="8" class="empty">No withdrawals yet.</td></tr>'}</tbody></table></div></div>
     </div>`;
-    $('#withdrawBtn').onclick=withdrawModal;
+    $('#withdrawBtn').onclick=()=>withdrawModal(d.stats.balance);
 }
-async function withdrawModal(){
+async function withdrawModal(balance){
   let methods=[];
   try{methods=await api('me/payment-methods')}catch(e){return toast(e.message)}
   if(!methods.length)return toast('Add a payment method in your Profile first.');
-  const ov0=viewCache['me/overview'];
-  const bal=ov0?.stats?.balance??0;
+  const bal=Number(balance)||0;
   const ov=modal(`
     <h2>Withdraw</h2>
     <p>Requests are reviewed by the administrator. Pending requests lock part of your balance.</p>
@@ -1031,9 +1021,9 @@ function renderPPerformance(main,d){
 /* ---------- AGENT: MY TEAM ---------- */
 let teamQ='';
 async function pTeam(main){
-  if(viewCache['me/team'])renderTeamView(main,viewCache['me/team']);else main.innerHTML='<p class="muted">Loading…</p>';
-  const rows=await api('me/team');viewCache['me/team']=rows;
-  if(!typing(main))renderTeamView(main,rows);
+  loading(main);
+  const rows=await api('me/team');
+  renderTeamView(main,rows);
 }
 function renderTeamView(main,rows){
   const list=rows.filter(m=>!teamQ||(m.name+' '+m.email+' '+m.code).toLowerCase().includes(teamQ.toLowerCase()));
@@ -1151,9 +1141,9 @@ function paymentMethodModal(existing,paint){
 
 /* ---------- AGENT: ALLOCATIONS ---------- */
 async function pAllocations(main){
-  if(viewCache['me/allocations'])renderAgentAllocations(main,viewCache['me/allocations']);else main.innerHTML='<p class="muted">Loading…</p>';
-  const d=await api('me/allocations');viewCache['me/allocations']=d;
-  if(!typing(main))renderAgentAllocations(main,d);
+  loading(main);
+  const d=await api('me/allocations');
+  renderAgentAllocations(main,d);
 }
 function renderAgentAllocations(main,d){
   main.innerHTML=`
@@ -1193,8 +1183,8 @@ function renderAgentAllocations(main,d){
 async function teamAllocModal(t,d){
   const editing=!!t;
   const allocs=d.mine||[];
-  let members=viewCache['me/team'];
-  if(!members){try{members=viewCache['me/team']=await api('me/team')}catch{members=[]}}
+  let members=[];
+  try{members=await api('me/team')}catch{members=[]}
   if(!editing&&!members.length)return toast('Add a team member in My Team first.');
   if(!editing&&!allocs.length)return toast('You have no project allocations to assign yet.');
   const ov=modal(`
@@ -1229,12 +1219,11 @@ async function teamAllocModal(t,d){
 /* ---------- AGENT: CONTRIBUTE ---------- */
 
 async function pContribute(main){
-  if(viewCache['contributions/mine'])renderPContribute(main,viewCache['contributions/mine']);else main.innerHTML='<p class="muted">Loading…</p>';
-  const [rows,ov]=await Promise.all([api('contributions/mine'),api('me/overview')]);
-  viewCache['contributions/mine']=rows;viewCache['me/overview']=ov;
-  if(!typing(main))renderPContribute(main,rows);
+  loading(main);
+  const [rows,overview]=await Promise.all([api('contributions/mine'),api('me/overview')]);
+  renderPContribute(main,rows,overview);
 }
-function renderPContribute(main,rows){
+function renderPContribute(main,rows,overview){
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Contribute</h1><p>Submit the users you acquired today with proof — the admin reviews every request.</p></div>
   <div class="actions"><button class="btn dark" id="addContrib">+ Add contribution</button></div></div>
@@ -1252,10 +1241,10 @@ function renderPContribute(main,rows){
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.review_note||'')}">${c.reviewed_at?esc(c.review_note||'Reviewed'):'Waiting for review'}</td>
   </tr>`).join(''):'<tr><td colspan="8" class="empty">No contribution requests yet. Click “+ Add contribution”.</td></tr>'}</tbody></table></div></div>`;
   main.querySelectorAll('[data-files]').forEach(b=>b.onclick=()=>filesModal(JSON.parse(b.dataset.files)));
-  $('#addContrib').onclick=contributeModal;
+  $('#addContrib').onclick=()=>contributeModal(overview);
 }
-function contributeModal(){
-  const ov=viewCache['me/overview'],projects=(ov?.projects||[]).filter(x=>x.project);
+function contributeModal(overview){
+  const projects=(overview?.projects||[]).filter(x=>x.project);
   const m=modal(`
     <h2>Add contribution</h2>
     <p>Request credit for today's results. The admin accepts or rejects each request after checking the proof.</p>
@@ -1280,7 +1269,7 @@ function contributeModal(){
     picked.forEach(f=>fd.append('file',f));
     const btn=m.querySelector('#cGo');
     btn.disabled=true;btn.textContent='Sending…';
-    try{await upload('contributions',fd);dropCache();m.remove();toast('Contribution request sent for review.');renderPartner()}
+    try{await upload('contributions',fd);m.remove();toast('Contribution request sent for review.');renderPartner()}
     catch(e){toast(e.message);btn.disabled=false;btn.textContent='Send request'}
   };
 }
@@ -1317,9 +1306,21 @@ async function pHelpdesk(main){
 
 /* ═══════════ BOOT ═══════════ */
 
-function boot(){
-  if(state?.role==='admin')return adminApp();
-  if(state?.role==='partner')return partnerApp();
+async function boot(){
+  if(state?.token){
+    app.innerHTML='<div class="empty" style="padding:45px">Connecting to database…</div>';
+    try{
+      const fresh=await api('auth/session');
+      save({token:state.token,role:fresh.role,user:fresh.user});
+      if(state.role==='admin')return adminApp();
+      if(state.role==='partner')return partnerApp();
+    }catch(e){
+      localStorage.removeItem('ios.session');state=null;
+      landing();
+      toast(e.message||'Session expired. Please sign in again.');
+      return;
+    }
+  }
   landing();
 }
 boot();
