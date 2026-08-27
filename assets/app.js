@@ -182,7 +182,9 @@ async function adminLoginModal(){
     ${register?'<div class="field"><label>Name</label><input id="aName" placeholder="Your name"></div>':''}
     <div class="field"><label>Email</label><input id="aEmail" type="email" placeholder="admin@company.com"></div>
     <div class="field"><label>Password</label><input id="aPass" type="password" placeholder="Minimum 6 characters"></div>
+    <p class="form-note">Want to join the admin board as a user? <a href="#" id="userReq" style="color:#111;font-weight:600">Create user account request</a></p>
     <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn dark" id="aGo">${register?'Create & sign in':'Sign in'}</button></div>`);
+  ov.querySelector('#userReq').onclick=e=>{e.preventDefault();ov.remove();userRequestModal()};
   ov.querySelector('#aGo').onclick=async()=>{
     try{
       const payload=register?{name:ov.querySelector('#aName').value,email:ov.querySelector('#aEmail').value,password:ov.querySelector('#aPass').value}
@@ -192,6 +194,25 @@ async function adminLoginModal(){
     }catch(e){toast(e.message)}
   };
 }
+
+function userRequestModal(){
+  const ov=modal(`
+    <h2>Create user account request</h2>
+    <p>Your account will stay pending until an administrator confirms it from User Control.</p>
+    <div class="field-row"><div class="field"><label>Name</label><input id="uName" placeholder="Your full name"></div><div class="field"><label>Email</label><input id="uEmail" type="email" placeholder="you@company.com"></div></div>
+    <div class="field"><label>Phone</label><input id="uPhone" placeholder="+880…"></div>
+    <div class="field"><label>Address</label><input id="uAddress" placeholder="Street, city"></div>
+    <div class="field"><label>Password</label><input id="uPass" type="password" placeholder="Minimum 6 characters"></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn dark" id="uGo">Send request</button></div>`);
+  ov.querySelector('#uGo').onclick=async()=>{
+    const btn=ov.querySelector('#uGo');btn.disabled=true;btn.textContent='Sending…';
+    try{
+      await api('auth/user/register',{method:'POST',body:JSON.stringify({name:ov.querySelector('#uName').value,email:ov.querySelector('#uEmail').value,phone:ov.querySelector('#uPhone').value,address:ov.querySelector('#uAddress').value,password:ov.querySelector('#uPass').value})});
+      ov.remove();modal('<h2>Request submitted</h2><p>Your user account request is waiting for administrator confirmation. After approval, use the Admin login card to sign in.</p><div class="modal-actions"><button class="btn dark" data-close>Done</button></div>');
+    }catch(e){toast(e.message);btn.disabled=false;btn.textContent='Send request'}
+  };
+}
+
 function agentRegisterModal(){
   const ov=modal(`
     <h2>Create agent account</h2>
@@ -240,7 +261,7 @@ function adminApp(){
   document.body.classList.remove('landing-mode');
   document.body.classList.add('dashboard-mode');
   document.title='InfluenceOS — Admin';
-  const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
+  const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']];
   app.innerHTML=`<div class="app">
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>powered by DoxTox</small></div>
@@ -270,6 +291,8 @@ async function renderAdmin(){
     if(aView==='allocations')return await aAllocations(main);
     if(aView==='payments')return await aPayments(main);
     if(aView==='performance')return await aPerformance(main);
+    if(aView==='profile')return await aAdminProfile(main);
+    if(aView==='users')return await aUserControl(main);
     if(aView==='settings')return aSettings(main);
   }catch(e){main.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
 }
@@ -300,12 +323,12 @@ function renderDashboard(main,d){
   <div class="section two">
     <div class="card table-card">
       <div class="table-top"><div><b>Project contribution</b><div style="font-size:11px;color:#999;margin-top:3px">Agent targets and acquired users</div></div></div>
-      <div style="overflow:auto"><table class="table"><thead><tr><th>Agent</th><th>Project</th><th>Target</th><th>Acquired</th><th>Progress</th><th>Commission</th><th>Status</th></tr></thead>
+      <div style="overflow:auto"><table class="table"><thead><tr><th>Agent</th><th>Project</th><th>Start</th><th>Deadline</th><th>Target</th><th>Acquired</th><th>Progress</th><th>Commission</th><th>Status</th></tr></thead>
       <tbody>${d.contributions.length?d.contributions.map(c=>`<tr>
         <td><div class="partner"><div class="avatar">${esc(initials(c.partner_name))}</div><div><b>${esc(c.partner_name)}</b><small>#${esc(c.partner_code)}</small></div></div></td>
-        <td>${esc(c.project_name)}</td><td>${num(c.assigned_target).toLocaleString()}</td><td><b>${num(c.acquired_users).toLocaleString()}</b></td>
+        <td>${esc(c.project_name)}</td><td>${c.start_date?fmtDate(c.start_date):'—'}</td><td>${c.deadline?fmtDate(c.deadline):'—'}</td><td>${num(c.assigned_target).toLocaleString()}</td><td><b>${num(c.acquired_users).toLocaleString()}</b></td>
         <td style="min-width:130px"><div style="display:flex;justify-content:space-between;font-size:10px"><span>${pct(num(c.acquired_users),num(c.assigned_target))}%</span><span>${num(c.assigned_target).toLocaleString()} target</span></div><div class="progress"><i style="width:${pct(num(c.acquired_users),num(c.assigned_target))}%"></i></div></td>
-        <td>${money(c.commission)}</td><td>${pill(ALLOC_STATUS,c.status)}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">No allocations yet.</td></tr>'}</tbody></table></div>
+        <td>${money(c.commission)}</td><td>${pill(ALLOC_STATUS,c.status)}</td></tr>`).join(''):'<tr><td colspan="9" class="empty">No allocations yet.</td></tr>'}</tbody></table></div>
     </div>
     <div class="card">
       <div class="section-head"><h2>Upcoming payouts</h2><span>Not yet paid</span></div>
@@ -412,6 +435,8 @@ function renderProjectsView(main,projects){
   <div class="project-grid">${projects.length?projects.map(p=>`
     <div class="project-card"><div class="detail-head"><div><h3>${esc(p.name)}</h3><p>${esc(p.details||'')}</p></div>${projPill(p.status)}</div>
       <div class="meta"><span>Budget</span><b>${money(p.budget)}</b></div>
+      <div class="meta"><span>Start date</span><b>${p.start_date?fmtDate(p.start_date):'—'}</b></div>
+      <div class="meta"><span>Deadline</span><b>${p.deadline?fmtDate(p.deadline):'—'}</b></div>
       <div class="meta"><span>Used budget <small>(auto)</small></span><b>${money(p.used_budget)}</b></div>
       <div class="meta"><span>Remaining budget</span><b>${money(p.remaining_budget)}</b></div>
       ${(p.categories||[]).length?(p.categories||[]).map(c=>`<div class="meta"><span>Target ${catLabel(c.category).toLowerCase()}</span><b>${num(c.target).toLocaleString()}</b></div>
@@ -434,10 +459,14 @@ function projectModal(p){
       <div class="field"><label>Budget</label><input id="jBudget" type="number" min="0" step="50" value="${num(p?.budget)}"></div>
       <div class="field"><label>Status</label><select id="jStatus"><option value="active" ${p?.status!=='inactive'?'selected':''}>Active</option><option value="inactive" ${p?.status==='inactive'?'selected':''}>Inactive</option></select></div>
     </div>
+    <div class="field-row">
+      <div class="field"><label>Start date</label><input id="jStart" type="date" value="${esc(p?.start_date||'')}"></div>
+      <div class="field"><label>Deadline</label><input id="jDeadline" type="date" value="${esc(p?.deadline||'')}"></div>
+    </div>
     <div class="field"><label>Note</label><input id="jNote" value="${esc(p?.note||'')}"></div>
     <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn dark" id="jSave">${p?'Save changes':'Add project'}</button></div>`);
   ov.querySelector('#jSave').onclick=async()=>{
-    const payload={name:ov.querySelector('#jName').value,details:ov.querySelector('#jDetails').value,budget:num(ov.querySelector('#jBudget').value),status:ov.querySelector('#jStatus').value,note:ov.querySelector('#jNote').value};
+    const payload={name:ov.querySelector('#jName').value,details:ov.querySelector('#jDetails').value,budget:num(ov.querySelector('#jBudget').value),start_date:ov.querySelector('#jStart').value||null,deadline:ov.querySelector('#jDeadline').value||null,status:ov.querySelector('#jStatus').value,note:ov.querySelector('#jNote').value};
     try{
       if(p)await mutate('projects/'+p.id,{method:'PATCH',body:JSON.stringify(payload)});
       else await mutate('projects',{method:'POST',body:JSON.stringify(payload)});
@@ -464,14 +493,14 @@ function renderPaymentsView(main,payments,partners,allocations,withdrawals){
   <div class="actions"><button class="btn dark" id="addPay">+ Add payment</button></div></div>
   <div class="two">
     <div class="section-box" style="margin-top:0"><div class="toolbar"><h2>Payouts</h2><div class="filters"><input id="payq" placeholder="Search agent or project…" value="${esc(payFilterQ)}"></div></div>
-    <div style="overflow:auto"><table class="view-table"><thead><tr><th>Payment ID</th><th>Date</th><th>Agent</th><th>Project</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+    <div style="overflow:auto"><table class="view-table"><thead><tr><th>Payment ID</th><th>Date</th><th>Agent</th><th>Project</th><th>Start</th><th>Deadline</th><th>Amount</th><th>Status</th><th></th></tr></thead>
     <tbody>${list.length?list.map(p=>`<tr>
       <td><b>${esc(String(p.id).slice(0,8).toUpperCase())}</b></td><td>${fmtDate(p.payment_date)}</td>
       <td><div class="partner"><div class="avatar">${esc(initials(p.partner_name))}</div><div><b>${esc(p.partner_name)}</b><small>#${esc(p.partner_code)}</small></div></div></td>
-      <td>${esc(p.project_name)}</td><td><b>${money(p.amount)}</b></td>
+      <td>${esc(p.project_name)}</td><td>${p.start_date?fmtDate(p.start_date):'—'}</td><td>${p.deadline?fmtDate(p.deadline):'—'}</td><td><b>${money(p.amount)}</b></td>
       <td>${pill(PAY_STATUS,p.status)}</td>
       <td class="actions-cell">${p.status!=='paid'?`<button class="btn small" data-paid="${p.id}">Mark paid</button>`:''}<button class="btn small danger" data-del="${p.id}">×</button></td>
-    </tr>`).join(''):'<tr><td colspan="7" class="empty">No payments yet.</td></tr>'}</tbody></table></div></div>
+    </tr>`).join(''):'<tr><td colspan="9" class="empty">No payments yet.</td></tr>'}</tbody></table></div></div>
 
     <div class="section-box" style="margin-top:0"><div class="toolbar"><h2>Withdraw requests</h2><span class="muted">${withdrawals.filter(w=>w.status==='pending').length} pending</span></div>
     <div style="overflow:auto"><table class="view-table"><thead><tr><th>ID</th><th>Date</th><th>Agent</th><th>Method</th><th>Type</th><th>Number / Address</th><th>Amount</th><th>Provider</th><th>Trx</th><th>Status</th><th></th></tr></thead>
@@ -556,8 +585,8 @@ function paymentModal(partners,allocations,payments){
       <span class="right"><b>${money(a.commission)}</b></span>
     </div>`).join(''):'<p class="muted" style="font-size:12px">No allocations for this agent.</p>'}
     <div class="section-head" style="margin-top:12px"><h2>Previous payments</h2><span class="muted">${myPays.length} total</span></div>
-    <div style="overflow:auto;max-height:180px"><table class="view-table"><thead><tr><th>Payment ID</th><th>Date</th><th>Project</th><th>Amount</th><th>Status</th></tr></thead>
-    <tbody>${myPays.length?myPays.map(x=>`<tr><td><b>${esc(String(x.id).slice(0,8).toUpperCase())}</b></td><td>${fmtDate(x.payment_date)}</td><td>${esc(x.project_name)}</td><td>${money(x.amount)}</td><td>${pill(PAY_STATUS,x.status)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No previous payments.</td></tr>'}</tbody></table></div>
+    <div style="overflow:auto;max-height:180px"><table class="view-table"><thead><tr><th>Payment ID</th><th>Date</th><th>Project</th><th>Start</th><th>Deadline</th><th>Amount</th><th>Status</th></tr></thead>
+    <tbody>${myPays.length?myPays.map(x=>`<tr><td><b>${esc(String(x.id).slice(0,8).toUpperCase())}</b></td><td>${fmtDate(x.payment_date)}</td><td>${esc(x.project_name)}</td><td>${x.start_date?fmtDate(x.start_date):'—'}</td><td>${x.deadline?fmtDate(x.deadline):'—'}</td><td>${money(x.amount)}</td><td>${pill(PAY_STATUS,x.status)}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">No previous payments.</td></tr>'}</tbody></table></div>
     <div class="payform">
       <div class="section-head" style="margin:0 0 10px"><h2>New payment</h2><span class="muted">Amount is added to the selected project's commission</span></div>
       <div class="field-row">
@@ -598,16 +627,17 @@ function renderAllocationsView(main,allocs,projects,partners,teamAllocs=[]){
   <div class="top"><div class="title"><h1>Allocations</h1><p>Assign project targets to agents. Acquired &amp; commission fill automatically from contributions and payments.</p></div>
   <div class="actions"><button class="btn dark" id="addAlloc">+ Add allocation</button></div></div>
   <div class="section-box"><div class="toolbar"><h2>Allocation table</h2><div class="filters"><input id="aq" placeholder="Search project or agent…" value="${esc(aFilterQ)}"></div></div>
-  <div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Agent</th><th>Assigned target</th><th>Users acquired <small>(auto)</small></th><th>Commission <small>(auto)</small></th><th>Progress</th><th>Status</th><th></th></tr></thead>
+  <div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Agent</th><th>Start</th><th>Deadline</th><th>Assigned target</th><th>Users acquired <small>(auto)</small></th><th>Commission <small>(auto)</small></th><th>Progress</th><th>Status</th><th></th></tr></thead>
   <tbody>${list.length?list.map(a=>`<tr>
     <td>${esc(a.project_name)}</td>
     <td><span class="pill blue">${catLabel(a.category)}</span></td>
     <td><div class="partner"><div class="avatar">${esc(initials(a.partner_name))}</div><div><b>${esc(a.partner_name)}</b><small>#${esc(a.partner_code)}</small></div></div></td>
+    <td>${a.start_date?fmtDate(a.start_date):'—'}</td><td>${a.deadline?fmtDate(a.deadline):'—'}</td>
     <td>${num(a.assigned_target).toLocaleString()}</td><td><b>${num(a.acquired_users).toLocaleString()}</b></td><td>${money(a.commission)}</td>
     <td style="min-width:120px"><div style="font-size:10px;margin-bottom:4px">${pct(num(a.acquired_users),num(a.assigned_target))}%</div><div class="progress"><i style="width:${pct(num(a.acquired_users),num(a.assigned_target))}%"></i></div></td>
     <td>${pill(ALLOC_STATUS,a.status)}</td>
     <td class="actions-cell"><button class="btn small" data-edit="${a.id}">Edit</button><button class="btn small danger" data-del="${a.id}">×</button></td>
-  </tr>`).join(''):'<tr><td colspan="9" class="empty">No allocations yet.</td></tr>'}</tbody></table></div></div>
+  </tr>`).join(''):'<tr><td colspan="11" class="empty">No allocations yet.</td></tr>'}</tbody></table></div></div>
   <div class="section-box"><div class="toolbar"><h2>Agent team allocations</h2><span class="muted">How agents split their targets among their team members</span></div>
   <div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Agent</th><th>Team member</th><th>Assigned target</th><th>Acquired</th><th>Status</th></tr></thead>
   <tbody>${teamAllocs.length?teamAllocs.map(t=>`<tr>
@@ -633,13 +663,14 @@ function allocationModal(a,projects,agreePartners){
     <div class="field"><label>Agent <small>${editable?'':'(only agents with status “Agree” are listed)'}</small></label><select id="lPartner" ${editable?'disabled':''}><option value="">Select agent…</option>${agreePartners.map(p=>`<option value="${p.id}" ${a?.partner_id===p.id?'selected':''}>${esc(p.name)} · #${esc(p.partner_code)}</option>`).join('')}</select></div>
     <div class="field"><label>Category <small>(what the target counts)</small></label><select id="lCategory" ${editable?'disabled':''}>${CATEGORIES.map(c=>`<option value="${c}" ${a?.category===c?'selected':''}>${catLabel(c)}</option>`).join('')}</select></div>
     ${editable?`<div class="kv" style="margin-bottom:12px"><span>Users acquired (auto)</span><b>${num(a.acquired_users).toLocaleString()}</b><span>Commission (auto)</span><b>${money(a.commission)}</b></div>`:''}
+    <div class="field-row"><div class="field"><label>Start date</label><input id="lStart" type="date" value="${esc(a?.start_date||'')}"></div><div class="field"><label>Deadline</label><input id="lDeadline" type="date" value="${esc(a?.deadline||'')}"></div></div>
     <div class="field"><label>Assigned target</label><input id="lTarget" type="number" min="0" value="${num(a?.assigned_target)}"></div>
     <div class="field"><label>Status</label><select id="lStatus">${Object.entries(ALLOC_STATUS).map(([k,v])=>`<option value="${k}" ${a?.status===k?'selected':''}>${v[0]}</option>`).join('')}</select></div>
     <div class="field"><label>Note</label><input id="lNote" value="${esc(a?.note||'')}"></div>
     <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn dark" id="lSave">${editable?'Save changes':'Add allocation'}</button></div>`);
   ov.querySelector('#lSave').onclick=async()=>{
     const projectId=ov.querySelector('#lProject').value,partnerId=ov.querySelector('#lPartner').value,category=ov.querySelector('#lCategory').value;
-    const payload={assigned_target:Math.round(num(ov.querySelector('#lTarget').value)),status:ov.querySelector('#lStatus').value,note:ov.querySelector('#lNote').value};
+    const payload={assigned_target:Math.round(num(ov.querySelector('#lTarget').value)),start_date:ov.querySelector('#lStart').value||null,deadline:ov.querySelector('#lDeadline').value||null,status:ov.querySelector('#lStatus').value,note:ov.querySelector('#lNote').value};
     try{
       if(editable)await mutate('allocations/'+a.id,{method:'PATCH',body:JSON.stringify(payload)});
       else await mutate('allocations',{method:'POST',body:JSON.stringify({project_id:projectId,partner_id:partnerId,category,...payload})});
@@ -665,18 +696,18 @@ function renderAContribute(main,rows){
     <div class="card stat"><div><div class="label">Rejected</div><div class="value">${count('rejected')}</div></div></div>
   </div>
   <div class="section-box"><div class="toolbar"><h2>All contribution requests</h2><span class="muted">Every agent · newest first</span></div>
-  <div style="overflow:auto"><table class="view-table"><thead><tr><th>ID</th><th>Date &amp; time</th><th>Agent</th><th>Project</th><th>Category</th><th>Acquired</th><th>Proof</th><th>Note</th><th>Status</th><th>Review</th><th></th></tr></thead>
+  <div style="overflow:auto"><table class="view-table"><thead><tr><th>ID</th><th>Date &amp; time</th><th>Agent</th><th>Project</th><th>Category</th><th>Start</th><th>Deadline</th><th>Acquired</th><th>Proof</th><th>Note</th><th>Status</th><th>Review</th><th></th></tr></thead>
   <tbody>${rows.length?rows.map(c=>`<tr>
     <td><b>${esc(c.code||String(c.id).slice(0,6))}</b></td>
     <td>${fmtDT(c.created_at)}</td>
     <td><div class="partner"><div class="avatar">${esc(initials(c.partner_name))}</div><div><b>${esc(c.partner_name)}</b><small>#${esc(c.partner_code)}</small></div></div></td>
-    <td>${esc(c.project_name)}</td><td><span class="pill blue">${catLabel(c.category)}</span></td><td><b>+${num(c.acquired).toLocaleString()}</b></td>
+    <td>${esc(c.project_name)}</td><td><span class="pill blue">${catLabel(c.category)}</span></td><td>${c.start_date?fmtDate(c.start_date):'—'}</td><td>${c.deadline?fmtDate(c.deadline):'—'}</td><td><b>+${num(c.acquired).toLocaleString()}</b></td>
     <td>${filesCell(c.files)}</td>
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.note||'')}">${esc(c.note||'—')}</td>
     <td>${pill(CONTRIB_STATUS,c.status)}</td>
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.review_note||'')}">${c.reviewed_at?esc(c.review_note||'—'):'—'}</td>
     <td class="actions-cell">${c.status==='pending'?`<button class="btn small" data-accept="${c.id}" data-n="${num(c.acquired)}">Accept</button><button class="btn small danger" data-reject="${c.id}">Reject</button>`:''}</td>
-  </tr>`).join(''):'<tr><td colspan="10" class="empty">No contribution requests yet.</td></tr>'}</tbody></table></div></div>`;
+  </tr>`).join(''):'<tr><td colspan="13" class="empty">No contribution requests yet.</td></tr>'}</tbody></table></div></div>`;
   main.querySelectorAll('[data-files]').forEach(b=>b.onclick=()=>filesModal(JSON.parse(b.dataset.files)));
   main.querySelectorAll('[data-accept]').forEach(b=>b.onclick=async()=>{
     if(!confirm(`Accept this contribution? ${b.dataset.n} users will be added to the allocation's Users acquired automatically.`))return;
@@ -832,14 +863,14 @@ async function aPerformance(main){
 function renderPerformanceView(main,rows){
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Performance</h1><p>Category-wise achievement per agent and project — ranked automatically.</p></div></div>
-  <div class="section-box"><div style="overflow:auto"><table class="view-table"><thead><tr><th>Rank</th><th>Agent</th><th>Project</th><th>Category</th><th>Assigned</th><th>Acquired</th><th>Achievement</th></tr></thead>
+  <div class="section-box"><div style="overflow:auto"><table class="view-table"><thead><tr><th>Rank</th><th>Agent</th><th>Project</th><th>Category</th><th>Start</th><th>Deadline</th><th>Assigned</th><th>Acquired</th><th>Achievement</th></tr></thead>
   <tbody>${rows.length?rows.map(r=>`<tr>
     <td><b>#${r.rank}</b></td>
     <td><div class="partner"><div class="avatar">${esc(initials(r.name))}</div><div><b>${esc(r.name)}</b><small>#${esc(r.partner_code)} · ${TYPE_LABELS[r.type]||r.type}</small></div></div></td>
-    <td>${esc(r.project_name)}</td><td><span class="pill blue">${catLabel(r.category)}</span></td>
+    <td>${esc(r.project_name)}</td><td><span class="pill blue">${catLabel(r.category)}</span></td><td>${r.start_date?fmtDate(r.start_date):'—'}</td><td>${r.deadline?fmtDate(r.deadline):'—'}</td>
     <td>${num(r.assigned).toLocaleString()}</td><td><b>${num(r.acquired).toLocaleString()}</b></td>
     <td style="min-width:140px"><div style="display:flex;justify-content:space-between;font-size:11px"><b>${r.pct}%</b></div><div class="progress"><i style="width:${Math.min(100,r.pct)}%"></i></div></td>
-  </tr>`).join(''):'<tr><td colspan="7" class="empty">No performance data yet.</td></tr>'}</tbody></table></div></div>`;
+  </tr>`).join(''):'<tr><td colspan="9" class="empty">No performance data yet.</td></tr>'}</tbody></table></div></div>`;
 }
 
 /* ---------- ADMIN: SETTINGS ---------- */
@@ -848,13 +879,100 @@ function aSettings(main){
   <div class="section-box"><div class="empty" style="padding:60px">⚙<br><br><b>Future Development</b><br>Settings will arrive in an upcoming release.</div></div>`;
 }
 
+
+/* ---------- ADMIN: USER PROFILE ---------- */
+async function aAdminProfile(main){
+  loading(main);
+  const me=await api('admin/profile');
+  renderAdminProfile(main,me);
+}
+function renderAdminProfile(main,me){
+  main.innerHTML=`
+  <div class="top"><div class="title"><h1>User Profile</h1><p>Manage your admin board profile and password.</p></div>
+  <div class="actions"><button class="btn dark" id="editAdminProfile">Edit profile</button></div></div>
+  <div class="section-box">
+    <div class="detail-head"><div style="display:flex;gap:14px;align-items:center"><div class="avatar" style="width:52px;height:52px;font-size:16px">${esc(initials(me.name))}</div><div><h2>${esc(me.name)}</h2><p>${me.kind==='owner'?'Primary administrator':'Board user'}</p></div></div>${me.status?pill(USER_STATUS,me.status):'<span class="pill green">Owner</span>'}</div>
+    <div class="kv" style="margin-top:14px">
+      <span>Name</span><b>${esc(me.name)}</b>
+      <span>Email</span><b>${esc(me.email)}</b>
+      <span>Phone</span><b>${esc(me.phone||'—')}</b>
+      <span>Address</span><b>${esc(me.address||'—')}</b>
+      <span>Password</span><b>••••••••</b>
+    </div>
+  </div>`;
+  $('#editAdminProfile').onclick=()=>adminProfileModal(me);
+}
+function adminProfileModal(me){
+  const ov=modal(`
+    <h2>Edit user profile</h2>
+    <p>Leave password blank to keep the current password.</p>
+    <div class="field-row"><div class="field"><label>Name</label><input id="apName" value="${esc(me.name||'')}"></div><div class="field"><label>Email</label><input id="apEmail" type="email" value="${esc(me.email||'')}"></div></div>
+    <div class="field"><label>Phone</label><input id="apPhone" value="${esc(me.phone||'')}"></div>
+    <div class="field"><label>Address</label><input id="apAddress" value="${esc(me.address||'')}"></div>
+    <div class="field"><label>Change password</label><input id="apPass" type="password" placeholder="Minimum 6 characters"></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn dark" id="apSave">Save changes</button></div>`);
+  ov.querySelector('#apSave').onclick=async()=>{
+    const btn=ov.querySelector('#apSave');btn.disabled=true;btn.textContent='Saving…';
+    try{
+      const out=await mutate('admin/profile',{method:'PATCH',body:JSON.stringify({name:ov.querySelector('#apName').value,email:ov.querySelector('#apEmail').value,phone:ov.querySelector('#apPhone').value,address:ov.querySelector('#apAddress').value,password:ov.querySelector('#apPass').value||undefined})});
+      save({token:state.token,role:'admin',user:out});ov.remove();toast('Profile updated.');renderAdmin();
+    }catch(e){toast(e.message);btn.disabled=false;btn.textContent='Save changes'}
+  };
+}
+
+/* ---------- ADMIN: USER CONTROL ---------- */
+const USER_STATUS={active:['Active','green'],inactive:['Deactive','gray'],pending:['Pending request','yellow']};
+async function aUserControl(main){
+  loading(main);
+  const users=await api('admin/users');
+  renderUserControl(main,users);
+}
+function renderUserControl(main,users){
+  main.innerHTML=`
+  <div class="top"><div class="title"><h1>User Control</h1><p>Confirm user account requests and manage admin board users.</p></div>
+  <div class="actions"><button class="btn dark" id="addUser">+ Add user</button></div></div>
+  <div class="section-box"><div class="toolbar"><h2>Board users</h2><span class="muted">${users.filter(u=>u.status==='pending').length} pending request(s)</span></div>
+  <div style="overflow:auto"><table class="view-table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
+  <tbody>${users.length?users.map(u=>`<tr>
+    <td><div class="partner"><div class="avatar">${esc(initials(u.name))}</div><div><b>${esc(u.name)}</b><small>${u.status==='pending'?'Requested to join board':'Board user'}</small></div></div></td>
+    <td>${esc(u.email)}</td><td>${esc(u.phone||'—')}</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(u.address||'')}">${esc(u.address||'—')}</td>
+    <td>${pill(USER_STATUS,u.status)}</td><td>${fmtDate(u.created_at)}</td>
+    <td class="actions-cell">${u.status==='pending'?`<button class="btn small" data-approve="${u.id}">Confirm</button>`:''}<button class="btn small" data-edit-user="${u.id}">Edit</button><button class="btn small danger" data-del-user="${u.id}">×</button></td>
+  </tr>`).join(''):'<tr><td colspan="7" class="empty">No users yet.</td></tr>'}</tbody></table></div></div>`;
+  $('#addUser').onclick=()=>userControlModal(null);
+  main.querySelectorAll('[data-approve]').forEach(b=>b.onclick=async()=>{try{await mutate('admin/users/'+b.dataset.approve,{method:'PATCH',body:JSON.stringify({status:'active'})});toast('User confirmed.');renderAdmin()}catch(e){toast(e.message)}});
+  main.querySelectorAll('[data-edit-user]').forEach(b=>b.onclick=()=>userControlModal(users.find(u=>u.id===b.dataset.editUser)));
+  main.querySelectorAll('[data-del-user]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this user account?'))return;try{await mutate('admin/users/'+b.dataset.delUser,{method:'DELETE'});toast('User deleted.');renderAdmin()}catch(e){toast(e.message)}});
+}
+function userControlModal(u){
+  const ov=modal(`
+    <h2>${u?'Edit user':'Add user'}</h2>
+    <p>${u?'Update this board user. Leave password blank to keep current.':'Create a board user who can login from the Admin login card.'}</p>
+    <div class="field-row"><div class="field"><label>Name</label><input id="ucName" value="${esc(u?.name||'')}"></div><div class="field"><label>Email</label><input id="ucEmail" type="email" value="${esc(u?.email||'')}"></div></div>
+    <div class="field"><label>Phone</label><input id="ucPhone" value="${esc(u?.phone||'')}"></div>
+    <div class="field"><label>Address</label><input id="ucAddress" value="${esc(u?.address||'')}"></div>
+    <div class="field"><label>${u?'Change password':'Password'}</label><input id="ucPass" type="password" placeholder="Minimum 6 characters"></div>
+    <div class="field"><label>Active / Deactive</label><select id="ucStatus"><option value="active" ${u?.status==='active'?'selected':''}>Active</option><option value="inactive" ${u?.status==='inactive'?'selected':''}>Deactive</option><option value="pending" ${u?.status==='pending'?'selected':''}>Pending request</option></select></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn dark" id="ucSave">${u?'Save changes':'Add user'}</button></div>`);
+  ov.querySelector('#ucSave').onclick=async()=>{
+    const btn=ov.querySelector('#ucSave');btn.disabled=true;btn.textContent='Saving…';
+    const payload={name:ov.querySelector('#ucName').value,email:ov.querySelector('#ucEmail').value,phone:ov.querySelector('#ucPhone').value,address:ov.querySelector('#ucAddress').value,password:ov.querySelector('#ucPass').value||undefined,status:ov.querySelector('#ucStatus').value};
+    try{
+      if(u)await mutate('admin/users/'+u.id,{method:'PATCH',body:JSON.stringify(payload)});
+      else await mutate('admin/users',{method:'POST',body:JSON.stringify(payload)});
+      ov.remove();toast(u?'User updated.':'User added.');renderAdmin();
+    }catch(e){toast(e.message);btn.disabled=false;btn.textContent=u?'Save changes':'Add user'}
+  };
+}
+
+
 /* ═══════════ PARTNER (AGENT) APP ═══════════ */
 let pView='profile';
 function partnerApp(){
   document.body.classList.remove('landing-mode');
   document.body.classList.add('dashboard-mode');
   document.title='InfluenceOS — Agent';
-  const nav=[['profile','◉','Profile'],['team','☰','My Team'],['allocations','◌','Allocations'],['contribute','⇧','Contribute'],['projects','◆','Projects'],['payments','$','Payments'],['performance','◫','Performance'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
+  const nav=[['profile','◉','Profile'],['team','☰','My Team'],['allocations','◌','Allocations'],['contribute','⇧','Contribute'],['projects','◆','Projects'],['payments','$','Payments'],['performance','◫','Performance'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']];
   app.innerHTML=`<div class="app">
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>agent portal · DoxTox</small></div>
@@ -966,6 +1084,8 @@ function renderPProjects(main,d){
     main.innerHTML=`<div class="top"><div class="title"><h1>My projects</h1><p>Projects allocated to your account.</p></div></div>
     <div class="project-grid">${d.projects.length?d.projects.map(x=>`
       <div class="project-card"><div class="detail-head"><div><h3>${esc(x.project?.name||'—')}</h3><p>${esc(x.project?.details||'')}</p></div><span class="pill blue">${catLabel(x.category)}</span></div>
+        <div class="meta"><span>Start date</span><b>${x.start_date?fmtDate(x.start_date):'—'}</b></div>
+        <div class="meta"><span>Deadline</span><b>${x.deadline?fmtDate(x.deadline):'—'}</b></div>
         <div class="meta"><span>My target (${catLabel(x.category).toLowerCase()})</span><b>${num(x.assigned_target).toLocaleString()}</b></div>
         <div class="meta"><span>My acquired</span><b>${num(x.acquired_users).toLocaleString()}</b></div>
         <div class="progress-lg"><i style="width:${Math.min(100,x.pct)}%"></i></div>
@@ -981,8 +1101,8 @@ function renderPPayments(main,d){
       <div class="card stat"><div><div class="label">Available Balance</div><div class="value">${money(d.stats.balance)}</div></div></div>
     </div>
     <div class="two">
-    <div class="section-box" style="margin-top:0"><div class="toolbar"><h2>Payout history</h2></div><div style="overflow:auto"><table class="view-table"><thead><tr><th>Payment ID</th><th>Date</th><th>Project</th><th>Amount</th><th>Status</th></tr></thead>
-    <tbody>${d.payments.length?d.payments.map(p=>`<tr><td><b>${esc(String(p.id).slice(0,8).toUpperCase())}</b></td><td>${fmtDate(p.payment_date)}</td><td>${esc(p.project_name)}</td><td><b>${money(p.amount)}</b></td><td>${pill(PAY_STATUS,p.status)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No payments yet.</td></tr>'}</tbody></table></div></div>
+    <div class="section-box" style="margin-top:0"><div class="toolbar"><h2>Payout history</h2></div><div style="overflow:auto"><table class="view-table"><thead><tr><th>Payment ID</th><th>Date</th><th>Project</th><th>Start</th><th>Deadline</th><th>Amount</th><th>Status</th></tr></thead>
+    <tbody>${d.payments.length?d.payments.map(p=>`<tr><td><b>${esc(String(p.id).slice(0,8).toUpperCase())}</b></td><td>${fmtDate(p.payment_date)}</td><td>${esc(p.project_name)}</td><td>${p.start_date?fmtDate(p.start_date):'—'}</td><td>${p.deadline?fmtDate(p.deadline):'—'}</td><td><b>${money(p.amount)}</b></td><td>${pill(PAY_STATUS,p.status)}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">No payments yet.</td></tr>'}</tbody></table></div></div>
     <div class="section-box" style="margin-top:0"><div class="toolbar"><h2>Withdrawals</h2><span class="muted">Your requests</span></div><div style="overflow:auto"><table class="view-table"><thead><tr><th>ID</th><th>Date</th><th>Method</th><th>Type</th><th>Number / Address</th><th>Amount</th><th>Trx</th><th>Status</th></tr></thead>
     <tbody>${(d.withdrawals||[]).length?(d.withdrawals||[]).map(w=>`<tr>
       <td><b>${esc(String(w.id).slice(0,8).toUpperCase())}</b></td><td>${fmtDate(w.created_at)}</td>
@@ -1025,8 +1145,8 @@ function renderPPerformance(main,d){
       <div class="card stat"><div><div class="label">Acquired</div><div class="value">${num(d.performance.acquired).toLocaleString()}</div></div></div>
       <div class="card stat"><div><div class="label">Achievement</div><div class="value">${d.performance.pct}%</div><div class="change">Rank #${d.performance.rank||'—'} of ${d.performance.total}</div></div></div>
     </div>
-    <div class="section-box"><div class="toolbar"><h2>Category-wise performance</h2></div><div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>My target</th><th>My acquired</th><th>Achievement</th><th>Commission</th><th>Status</th></tr></thead>
-    <tbody>${d.projects.length?d.projects.map(x=>`<tr><td><b>${esc(x.project?.name||'—')}</b></td><td><span class="pill blue">${catLabel(x.category)}</span></td><td>${num(x.assigned_target).toLocaleString()}</td><td>${num(x.acquired_users).toLocaleString()}</td><td>${x.pct}%</td><td>${money(x.commission)}</td><td>${pill(ALLOC_STATUS,x.status)}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">No allocations yet.</td></tr>'}</tbody></table></div></div>`;
+    <div class="section-box"><div class="toolbar"><h2>Category-wise performance</h2></div><div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Start</th><th>Deadline</th><th>My target</th><th>My acquired</th><th>Achievement</th><th>Commission</th><th>Status</th></tr></thead>
+    <tbody>${d.projects.length?d.projects.map(x=>`<tr><td><b>${esc(x.project?.name||'—')}</b></td><td><span class="pill blue">${catLabel(x.category)}</span></td><td>${x.start_date?fmtDate(x.start_date):'—'}</td><td>${x.deadline?fmtDate(x.deadline):'—'}</td><td>${num(x.assigned_target).toLocaleString()}</td><td>${num(x.acquired_users).toLocaleString()}</td><td>${x.pct}%</td><td>${money(x.commission)}</td><td>${pill(ALLOC_STATUS,x.status)}</td></tr>`).join(''):'<tr><td colspan="9" class="empty">No allocations yet.</td></tr>'}</tbody></table></div></div>`;
 }
 
 /* ---------- AGENT: MY TEAM ---------- */
@@ -1162,15 +1282,16 @@ function renderAgentAllocations(main,d){
   <div class="actions"><button class="btn dark" id="addTeamAlloc">+ Assign to team member</button></div></div>
 
   <div class="section-box" style="margin-top:0"><div class="toolbar"><h2>My allocations</h2><span class="muted">From the administrator — read only</span></div>
-  <div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Assigned target</th><th>Acquired <small>(auto)</small></th><th>Commission <small>(auto)</small></th><th>Status</th></tr></thead>
+  <div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Start</th><th>Deadline</th><th>Assigned target</th><th>Acquired <small>(auto)</small></th><th>Commission <small>(auto)</small></th><th>Status</th></tr></thead>
   <tbody>${d.mine.length?d.mine.map(a=>`<tr>
     <td>${esc(a.project_name)}</td>
     <td><span class="pill blue">${catLabel(a.category)}</span></td>
+    <td>${a.start_date?fmtDate(a.start_date):'—'}</td><td>${a.deadline?fmtDate(a.deadline):'—'}</td>
     <td>${num(a.assigned_target).toLocaleString()}</td>
     <td><b>${num(a.acquired_users).toLocaleString()}</b></td>
     <td>${money(a.commission)}</td>
     <td>${pill(ALLOC_STATUS,a.status)}</td>
-  </tr>`).join(''):'<tr><td colspan="6" class="empty">The admin has not allocated any project to you yet.</td></tr>'}</tbody></table></div></div>
+  </tr>`).join(''):'<tr><td colspan="8" class="empty">The admin has not allocated any project to you yet.</td></tr>'}</tbody></table></div></div>
 
   <div class="section-box"><div class="toolbar"><h2>Team allocations</h2><span class="muted">${d.team.length} assigned to your team</span></div>
   <div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Team member</th><th>Assigned target</th><th>Acquired</th><th>Note</th><th>Status</th><th></th></tr></thead>
@@ -1239,18 +1360,19 @@ function renderPContribute(main,rows,overview){
   <div class="top"><div class="title"><h1>Contribute</h1><p>Submit the users you acquired today with proof — the admin reviews every request.</p></div>
   <div class="actions"><button class="btn dark" id="addContrib">+ Add contribution</button></div></div>
   <div class="section-box"><div class="toolbar"><h2>My contribution requests</h2><span class="muted">Newest first</span></div>
-  <div style="overflow:auto"><table class="view-table"><thead><tr><th>ID</th><th>Date &amp; time</th><th>Project</th><th>Category</th><th>Acquired</th><th>Proof</th><th>Note</th><th>Status</th><th>Admin review</th></tr></thead>
+  <div style="overflow:auto"><table class="view-table"><thead><tr><th>ID</th><th>Date &amp; time</th><th>Project</th><th>Category</th><th>Start</th><th>Deadline</th><th>Acquired</th><th>Proof</th><th>Note</th><th>Status</th><th>Admin review</th></tr></thead>
   <tbody>${rows.length?rows.map(c=>`<tr>
     <td><b>${esc(c.code||String(c.id).slice(0,6))}</b></td>
     <td>${fmtDT(c.created_at)}</td>
     <td>${esc(c.project_name)}</td>
     <td><span class="pill blue">${catLabel(c.category)}</span></td>
+    <td>${c.start_date?fmtDate(c.start_date):'—'}</td><td>${c.deadline?fmtDate(c.deadline):'—'}</td>
     <td><b>+${num(c.acquired).toLocaleString()}</b></td>
     <td>${filesCell(c.files)}</td>
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.note||'')}">${esc(c.note||'—')}</td>
     <td>${pill(CONTRIB_STATUS,c.status)}</td>
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.review_note||'')}">${c.reviewed_at?esc(c.review_note||'Reviewed'):'Waiting for review'}</td>
-  </tr>`).join(''):'<tr><td colspan="8" class="empty">No contribution requests yet. Click “+ Add contribution”.</td></tr>'}</tbody></table></div></div>`;
+  </tr>`).join(''):'<tr><td colspan="10" class="empty">No contribution requests yet. Click “+ Add contribution”.</td></tr>'}</tbody></table></div></div>`;
   main.querySelectorAll('[data-files]').forEach(b=>b.onclick=()=>filesModal(JSON.parse(b.dataset.files)));
   $('#addContrib').onclick=()=>contributeModal(overview);
 }
