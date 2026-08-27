@@ -944,7 +944,7 @@ function connectXSettings(settings){
     <label>From email<input id="cxSetEmail" type="email" value="${esc(settings.from_email||'')}"></label>
     <label>Reply-to email <small class="muted">optional</small><input id="cxSetReply" type="email" value="${esc(settings.reply_to||'')}"></label>
     <label>Global daily limit<input id="cxSetLimit" type="number" min="0" step="1" value="${num(settings.global_daily_limit||500)}"></label>
-    <div class="section-head" style="margin-top:18px"><h2>Attachment HTML templates</h2><span>Use tags like {{Agent ID}}, {{Date}}, {{Amount}}</span></div>
+    <div class="section-head" style="margin-top:18px"><h2>Attachment HTML templates</h2><span>Full HTML is supported; scripts/external links are removed for email safety. Use inline CSS for best result.</span></div>
     <label>Allocation template<textarea class="cx-template" id="cxTplAllocation" rows="8">${esc(settings.allocation_template_html||'')}</textarea></label>
     <label>Payments template<textarea class="cx-template" id="cxTplPayments" rows="8">${esc(settings.payments_template_html||'')}</textarea></label>
     <label>Withdraw template<textarea class="cx-template" id="cxTplWithdraw" rows="8">${esc(settings.withdraw_template_html||'')}</textarea></label>
@@ -995,7 +995,7 @@ function wireConnectXSettings(main,settings){
 function wireConnectXHistory(main,history){
   $('#cxRefresh').onclick=()=>aConnectX(main);
   $('#cxHistSearch').oninput=e=>{const q=e.target.value.toLowerCase(),rows=history.filter(m=>!q||((m.subject||'')+' '+(m.recipient_name||'')+' '+(m.to_emails||[]).join(' ')).toLowerCase().includes(q));$('#cxHistBody').innerHTML=rows.length?rows.map(cxHistoryRow).join(''):'<tr><td colspan="7" class="empty">No message found.</td></tr>';wireConnectXHistory(main,rows)};
-  main.querySelectorAll('[data-cxview]').forEach(b=>b.onclick=()=>{const m=history.find(x=>x.id===b.dataset.cxview);if(!m)return;modal(`<h2>${esc(m.subject)}</h2><p>${esc(m.recipient_type)} · ${esc(m.recipient_name||'—')} · ${fmtDT(m.created_at)}</p><div class="kv"><span>To</span><b>${esc((m.to_emails||[]).join(', '))}</b><span>CC</span><b>${esc((m.cc_emails||[]).join(', ')||'—')}</b><span>BCC</span><b>${esc((m.bcc_emails||[]).join(', ')||'—')}</b><span>Status</span><b>${esc(m.status)}</b></div><div class="section-box"><div style="white-space:pre-wrap;font-size:13px;line-height:1.6">${esc(m.custom_body||'')}</div></div><div class="modal-actions"><button class="btn dark" data-close>Close</button></div>`)});
+  main.querySelectorAll('[data-cxview]').forEach(b=>b.onclick=()=>{const m=history.find(x=>x.id===b.dataset.cxview);if(!m)return;modal(`<h2>${esc(m.subject)}</h2><p>${esc(m.recipient_type)} · ${esc(m.recipient_name||'—')} · ${fmtDT(m.created_at)}</p><div class="kv"><span>To</span><b>${esc((m.to_emails||[]).join(', '))}</b><span>CC</span><b>${esc((m.cc_emails||[]).join(', ')||'—')}</b><span>BCC</span><b>${esc((m.bcc_emails||[]).join(', ')||'—')}</b><span>Status</span><b>${esc(m.status)}</b></div><div class="section-head" style="margin-top:16px"><h2>Rendered email preview</h2><span>Includes embedded template attachment</span></div><iframe class="cxmailpreview" sandbox srcdoc="${esc(m.body_html||('<pre>'+esc(m.custom_body||'')+'</pre>'))}"></iframe><div class="modal-actions"><button class="btn dark" data-close>Close</button></div>`, 'wide')});
 }
 
 
