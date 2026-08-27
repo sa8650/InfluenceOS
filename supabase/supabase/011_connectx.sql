@@ -4,7 +4,7 @@
 create table if not exists public.connectx_settings (
   id smallint primary key default 1 check (id = 1),
   enabled boolean not null default true,
-  from_name text not null default 'DoxTox ConnectX',
+  from_name text not null default 'InfluenceOS',
   from_email text not null default 'no-reply@doxtox.com',
   reply_to text,
   global_daily_limit integer not null default 500 check (global_daily_limit >= 0),
@@ -13,7 +13,7 @@ create table if not exists public.connectx_settings (
 );
 
 insert into public.connectx_settings(id, enabled, from_name, from_email, global_daily_limit)
-values (1, true, 'DoxTox ConnectX', 'no-reply@doxtox.com', 500)
+values (1, true, 'InfluenceOS', 'no-reply@doxtox.com', 500)
 on conflict (id) do nothing;
 
 create table if not exists public.connectx_messages (
