@@ -26,6 +26,15 @@ const publicAdminUser=u=>{if(!u)return u;delete u.password_hash;return u};
 const emailList=v=>String(v||'').split(/[;,]/).map(x=>x.trim().toLowerCase()).filter(Boolean);
 const validEmail=x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x);
 const safeText=x=>String(x||'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+const CX_DEFAULT_TEMPLATES={
+  allocation:`<div style="margin-top:22px;border:1px solid #111;padding:16px;font-family:Arial,sans-serif"><h3 style="margin:0 0 12px">Allocation Details</h3><p><b>Agent ID:</b> {{Agent ID}}</p><p><b>Project:</b> {{Project}}</p><p><b>Category:</b> {{Category}}</p><p><b>Start Date:</b> {{Start}}</p><p><b>Deadline:</b> {{Deadline}}</p><p><b>Target:</b> {{Target}}</p><p><b>Acquired:</b> {{Acquired}}</p><p><b>Commission:</b> {{Commission}}</p><p><b>Status:</b> {{Status}}</p></div>`,
+  payments:`<div style="margin-top:22px;border:1px solid #111;padding:16px;font-family:Arial,sans-serif"><h3 style="margin:0 0 12px">Payment Details</h3><p><b>Agent ID:</b> {{Agent ID}}</p><p><b>Date:</b> {{Date}}</p><p><b>Project:</b> {{Project}}</p><p><b>Amount:</b> {{Amount}}</p><p><b>Status:</b> {{Status}}</p></div>`,
+  withdraw:`<div style="margin-top:22px;border:1px solid #111;padding:16px;font-family:Arial,sans-serif"><h3 style="margin:0 0 12px">Withdrawal Details</h3><p><b>Agent ID:</b> {{Agent ID}}</p><p><b>Date:</b> {{Date}}</p><p><b>Withdrawal Method:</b> {{Method}}</p><p><b>Destination Account:</b> {{Destination}}</p><p><b>Amount Withdrawn:</b> {{Amount}}</p><p><b>Current Status:</b> {{Status}}</p><p><b>Transaction:</b> {{trx}}</p></div>`,
+  contribute:`<div style="margin-top:22px;border:1px solid #111;padding:16px;font-family:Arial,sans-serif"><h3 style="margin:0 0 12px">Contribution Details</h3><p><b>Agent ID:</b> {{Agent ID}}</p><p><b>Date:</b> {{Date}}</p><p><b>Project:</b> {{Project}}</p><p><b>Category:</b> {{Category}}</p><p><b>Acquired:</b> {{Acquired}}</p><p><b>Status:</b> {{Status}}</p></div>`,
+  performance:`<div style="margin-top:22px;border:1px solid #111;padding:16px;font-family:Arial,sans-serif"><h3 style="margin:0 0 12px">Performance Details</h3><p><b>Agent ID:</b> {{Agent ID}}</p><p><b>Rank:</b> {{Rank}}</p><p><b>Project:</b> {{Project}}</p><p><b>Category:</b> {{Category}}</p><p><b>Assigned:</b> {{Assigned}}</p><p><b>Acquired:</b> {{Acquired}}</p><p><b>Achievement:</b> {{Achievement}}</p></div>`
+};
+const cxTemplate=(cfg,type)=>cfg?.[`${type}_template_html`]||CX_DEFAULT_TEMPLATES[type]||'';
+const renderCxTemplate=(tpl,data={})=>String(tpl||'').replace(/{{\s*([^}]+?)\s*}}/g,(m,k)=>safeText(data[k.trim()]??data[k.trim().toLowerCase()]??''));
 
 async function partnerStats(env,ids){
   const want=ids&&ids.length?ids:null;
@@ -418,7 +427,7 @@ export async function onRequest(context){
 
     if(path==='connectx/settings'&&method==='GET'){
       let [cfg]=await db(env,'connectx_settings?id=eq.1&select=*');
-      return json(cfg||{id:1,enabled:true,from_name:'InfluenceOS',from_email:'no-reply@doxtox.com',reply_to:null,global_daily_limit:500});
+      return json({...{id:1,enabled:true,from_name:'InfluenceOS',from_email:'no-reply@doxtox.com',reply_to:null,global_daily_limit:500},...Object.fromEntries(Object.entries(CX_DEFAULT_TEMPLATES).map(([k,v])=>[k+'_template_html',v])),...(cfg||{})});
     }
     if(path==='connectx/settings'&&method==='PATCH'){
       let b=await body(request),patch={updated_at:new Date().toISOString()};
@@ -427,6 +436,7 @@ export async function onRequest(context){
       if(b.from_email!==undefined){let e=String(b.from_email||'').trim().toLowerCase();if(!validEmail(e))return fail('Valid From email is required.');patch.from_email=e;}
       if(b.reply_to!==undefined){let e=String(b.reply_to||'').trim().toLowerCase();if(e&&!validEmail(e))return fail('Reply-to email must be valid.');patch.reply_to=e||null;}
       if(b.global_daily_limit!==undefined)patch.global_daily_limit=Math.max(0,Math.round(num(b.global_daily_limit)));
+      for(const k of ['allocation_template_html','payments_template_html','withdraw_template_html','contribute_template_html','performance_template_html'])if(b[k]!==undefined)patch[k]=String(b[k]).slice(0,20000);
       let [cfg]=await db(env,'connectx_settings?id=eq.1',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
       return json(cfg);
     }
@@ -453,7 +463,10 @@ export async function onRequest(context){
       let today=new Date().toISOString().slice(0,10),used=await db(env,`connectx_messages?created_at=gte.${today}T00:00:00Z&status=eq.sent&select=id`);
       if(used.length>=Number(cfg.global_daily_limit||0))return fail('ConnectX daily email limit has been reached.',429);
       const senderName=cfg.from_name||'InfluenceOS',fromEmail=cfg.from_email||'no-reply@doxtox.com';
-      const html='<div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55"><p style="margin:0 0 16px;color:#64748b;font-size:12px">Sent from <b>DoxTox ConnectX</b></p>'+safeText(b.body||'').replace(/\n/g,'<br>')+'</div>';
+      let html='<div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55"><p style="margin:0 0 16px;color:#64748b;font-size:12px">Sent from <b>DoxTox ConnectX</b></p>'+safeText(b.body||'').replace(/\n/g,'<br>');
+      const att=b.attachment&&typeof b.attachment==='object'?b.attachment:null;
+      if(att&&['allocation','payments','withdraw','contribute','performance'].includes(att.type)){html+=renderCxTemplate(cxTemplate(cfg,att.type),att.data||{});}
+      html+='</div>';
       let [msg]=await db(env,'connectx_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sender_id:s.id,sender_kind:s.kind==='user'?'user':'owner',recipient_type:recipientType,recipient_id:recipientId,recipient_name:recipientName||null,from_email:fromEmail,to_emails:to,cc_emails:cc,bcc_emails:bcc,subject:String(b.subject).trim().slice(0,220),custom_body:String(b.body||'').slice(0,10000),body_html:html,provider:'brevo_api',status:'sending'})});
       if(!env.BREVO_API_KEY){await db(env,`connectx_messages?id=eq.${msg.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'failed',error_message:'BREVO_API_KEY is not configured.',updated_at:new Date().toISOString()})});return fail('ConnectX provider is not configured. Add BREVO_API_KEY to Cloudflare secrets.',503)}
       let res=await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',headers:{'api-key':env.BREVO_API_KEY,'content-type':'application/json'},body:JSON.stringify({sender:{name:senderName,email:fromEmail},replyTo:cfg.reply_to?{email:cfg.reply_to}:undefined,to:to.map(email=>({email})),...(cc.length?{cc:cc.map(email=>({email}))}:{}),...(bcc.length?{bcc:bcc.map(email=>({email}))}:{}),subject:msg.subject,htmlContent:html})}),out=await res.json().catch(()=>({}));
