@@ -886,12 +886,12 @@ function aSettings(main){
 let cxView='compose', cxRecipientType='agent', cxSelected=null, cxContacts=[];
 async function aConnectX(main){
   loading(main);
-  const [contacts,history]=await Promise.all([api('connectx/contacts?type='+cxRecipientType),api('connectx/messages')]);
+  const [contacts,history,settings]=await Promise.all([api('connectx/contacts?type='+cxRecipientType),api('connectx/messages'),api('connectx/settings')]);
   cxContacts=contacts;
-  renderConnectX(main,contacts,history);
+  renderConnectX(main,contacts,history,settings);
 }
 function cxStatus(s){return `<span class="cxstatus ${esc(s||'queued')}">${esc(s||'queued')}</span>`}
-function renderConnectX(main,contacts,history){
+function renderConnectX(main,contacts,history,settings){
   main.innerHTML=`
   <div class="top"><div class="title"><h1>ConnectX</h1><p>Central mail communication system powered by DoxTox.</p></div></div>
   <div class="connectx">
@@ -899,12 +899,14 @@ function renderConnectX(main,contacts,history){
       <div class="connectxbrand">✉ ConnectX<small>powered by DoxTox</small></div>
       <button class="${cxView==='compose'?'on':''}" data-cx="compose">Compose</button>
       <button class="${cxView==='history'?'on':''}" data-cx="history">History <small>${history.length}</small></button>
+      <button class="${cxView==='settings'?'on':''}" data-cx="settings">Settings</button>
     </aside>
-    <section class="connectxmain">${cxView==='compose'?connectXCompose(contacts):connectXHistory(history)}</section>
+    <section class="connectxmain">${cxView==='compose'?connectXCompose(contacts):cxView==='history'?connectXHistory(history):connectXSettings(settings)}</section>
   </div>`;
-  main.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{cxView=b.dataset.cx;renderConnectX(main,contacts,history)});
+  main.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{cxView=b.dataset.cx;renderConnectX(main,contacts,history,settings)});
   if(cxView==='compose')wireConnectXCompose(main);
-  else wireConnectXHistory(main,history);
+  else if(cxView==='history')wireConnectXHistory(main,history);
+  else wireConnectXSettings(main,settings);
 }
 function connectXCompose(contacts){
   const selected=contacts.find(x=>x.id===cxSelected);
@@ -917,8 +919,10 @@ function connectXCompose(contacts){
     </div>
     <div class="cxfields">
       <label>To<input id="cxTo" value="${esc(selected?.email||'')}" placeholder="recipient@email.com"></label>
-      <label>CC <small class="muted">optional, comma separated</small><input id="cxCc" placeholder="cc@email.com"></label>
-      <label>BCC <small class="muted">optional, comma separated</small><input id="cxBcc" placeholder="bcc@email.com"></label>
+      <div class="cx-mini-actions"><button class="btn small" id="showCc" type="button">+ Add CC</button><button class="btn small" id="showBcc" type="button">+ Add BCC</button></div>
+      <label id="cxCcWrap" class="cx-optional" style="display:none">CC <small class="muted">optional, comma separated</small><input id="cxCc" placeholder="cc@email.com"></label>
+      <label id="cxBccWrap" class="cx-optional" style="display:none">BCC <small class="muted">optional, comma separated</small><input id="cxBcc" placeholder="bcc@email.com"></label>
+      <label>Attachment type<select id="cxAttachType"><option value="">No attachment</option><option value="allocation">Allocation</option><option value="payments">Payments</option><option value="withdraw">Withdraw</option><option value="contribute">Contribute</option><option value="performance">Performance</option></select></label>
       <label>Subject<input id="cxSubject" placeholder="Subject"></label>
       <label>Message<textarea id="cxBody" rows="9" placeholder="Write your message…"></textarea></label>
       <button class="btn dark" id="cxSend">Send email</button>
@@ -931,16 +935,53 @@ function connectXHistory(history){
   <div style="overflow:auto"><table class="view-table"><thead><tr><th>Date</th><th>Recipient type</th><th>Recipient</th><th>To</th><th>Subject</th><th>Status</th><th></th></tr></thead>
   <tbody id="cxHistBody">${history.length?history.map(m=>cxHistoryRow(m)).join(''):'<tr><td colspan="7" class="empty">No ConnectX messages yet.</td></tr>'}</tbody></table></div>`;
 }
+function connectXSettings(settings){
+  return `<div class="cxhead"><div><h2>Settings</h2><span>Configure ConnectX sender identity and provider limits.</span></div></div>
+  <div class="cxfields" style="max-width:640px">
+    <label>Enable ConnectX<select id="cxSetEnabled"><option value="yes" ${settings.enabled?'selected':''}>Enabled</option><option value="no" ${!settings.enabled?'selected':''}>Disabled</option></select></label>
+    <label>From name<input id="cxSetName" value="${esc(settings.from_name||'InfluenceOS')}"></label>
+    <label>From email<input id="cxSetEmail" type="email" value="${esc(settings.from_email||'')}"></label>
+    <label>Reply-to email <small class="muted">optional</small><input id="cxSetReply" type="email" value="${esc(settings.reply_to||'')}"></label>
+    <label>Global daily limit<input id="cxSetLimit" type="number" min="0" step="1" value="${num(settings.global_daily_limit||500)}"></label>
+    <button class="btn dark" id="cxSetSave">Save settings</button>
+  </div>`;
+}
 function cxHistoryRow(m){return `<tr><td>${fmtDT(m.created_at)}</td><td>${esc(m.recipient_type)}</td><td>${esc(m.recipient_name||'—')}</td><td>${esc((m.to_emails||[]).join(', '))}</td><td><b>${esc(m.subject)}</b>${m.error_message?`<small class="muted" style="display:block;color:#c62828">${esc(m.error_message)}</small>`:''}</td><td>${cxStatus(m.status)}</td><td><button class="btn small" data-cxview="${m.id}">View</button></td></tr>`}
 function wireConnectXCompose(main){
-  $('#cxType').onchange=async e=>{cxRecipientType=e.target.value;cxSelected=null;loading($('.connectxmain'));cxContacts=await api('connectx/contacts?type='+cxRecipientType);const hist=await api('connectx/messages');renderConnectX(main,cxContacts,hist)};
+  $('#showCc').onclick=()=>{$('#cxCcWrap').style.display='block';$('#showCc').style.display='none';$('#cxCc').focus()};
+  $('#showBcc').onclick=()=>{$('#cxBccWrap').style.display='block';$('#showBcc').style.display='none';$('#cxBcc').focus()};
+  $('#cxType').onchange=async e=>{cxRecipientType=e.target.value;cxSelected=null;loading($('.connectxmain'));cxContacts=await api('connectx/contacts?type='+cxRecipientType);const [hist,set]=await Promise.all([api('connectx/messages'),api('connectx/settings')]);renderConnectX(main,cxContacts,hist,set)};
   $('#cxSearch').oninput=e=>{const q=e.target.value.toLowerCase();$('#cxList').innerHTML=cxContacts.filter(c=>!q||(c.name+' '+c.email+' '+(c.code||'')).toLowerCase().includes(q)).map(c=>`<div class="cxcontact ${c.id===cxSelected?'on':''}" data-cxpick="${c.id}"><b>${esc(c.name)}</b><span>${esc(c.email)}</span><small>${esc(c.subtitle||c.phone||'')}</small></div>`).join('')||'<div class="empty">No recipient found.</div>';wireCxPick()};
   const wireCxPick=()=>document.querySelectorAll('[data-cxpick]').forEach(el=>el.onclick=()=>{cxSelected=el.dataset.cxpick;const c=cxContacts.find(x=>x.id===cxSelected);$('#cxTo').value=c?.email||'';document.querySelectorAll('[data-cxpick]').forEach(x=>x.classList.toggle('on',x===el))});
   wireCxPick();
+  $('#cxAttachType').onchange=e=>{if(e.target.value){connectXAttachmentModal(e.target.value);e.target.value=''}};
   $('#cxSend').onclick=async()=>{
     const btn=$('#cxSend');btn.disabled=true;btn.textContent='Sending…';
-    try{await mutate('connectx/send',{method:'POST',body:JSON.stringify({recipientType:cxRecipientType,recipientId:cxSelected,to:$('#cxTo').value,cc:$('#cxCc').value,bcc:$('#cxBcc').value,subject:$('#cxSubject').value,body:$('#cxBody').value,recipientName:cxContacts.find(x=>x.id===cxSelected)?.name||''})});toast('Email sent through ConnectX.');cxView='history';await aConnectX(main)}
+    try{await mutate('connectx/send',{method:'POST',body:JSON.stringify({recipientType:cxRecipientType,recipientId:cxSelected,to:$('#cxTo').value,cc:$('#cxCc')?.value||'',bcc:$('#cxBcc')?.value||'',subject:$('#cxSubject').value,body:$('#cxBody').value,recipientName:cxContacts.find(x=>x.id===cxSelected)?.name||''})});toast('Email sent through ConnectX.');cxView='history';await aConnectX(main)}
     catch(e){toast(e.message);btn.disabled=false;btn.textContent='Send email'}
+  };
+}
+async function connectXAttachmentModal(type){
+  if(cxRecipientType!=='agent'||!cxSelected)return toast('Select an agent first to attach allocation, payment, withdraw, contribute or performance details.');
+  const agent=cxContacts.find(x=>x.id===cxSelected);
+  const ov=modal(`<h2>Attach ${esc(type)} details</h2><p>Select one row for ${esc(agent?.name||'selected agent')} — it will be inserted into the email body.</p>${loaderHtml('Loading '+type+' list…')}`,'wide');
+  try{
+    let rows=[];
+    if(type==='allocation')rows=(await api('allocations')).filter(x=>x.partner_id===cxSelected).map(x=>({title:x.project_name+' · '+catLabel(x.category),cells:[['Start',x.start_date?fmtDate(x.start_date):'—'],['Deadline',x.deadline?fmtDate(x.deadline):'—'],['Target',num(x.assigned_target).toLocaleString()],['Acquired',num(x.acquired_users).toLocaleString()],['Commission',money(x.commission)],['Status',ALLOC_STATUS[x.status]?.[0]||x.status]]}));
+    if(type==='payments')rows=(await api('payments')).filter(x=>x.partner_id===cxSelected).map(x=>({title:x.project_name+' · '+money(x.amount),cells:[['Date',fmtDate(x.payment_date)],['Start',x.start_date?fmtDate(x.start_date):'—'],['Deadline',x.deadline?fmtDate(x.deadline):'—'],['Amount',money(x.amount)],['Status',PAY_STATUS[x.status]?.[0]||x.status]]}));
+    if(type==='withdraw')rows=(await api('withdrawals')).filter(x=>x.partner_id===cxSelected).map(x=>({title:(x.method||'withdraw')+' · '+money(x.amount),cells:[['Date',fmtDate(x.created_at)],['Method',x.method],['Destination',x.method==='crypto_usdt'?x.wallet_address:x.account_number],['Amount',money(x.amount)],['Status',WD_STATUS[x.status]?.[0]||x.status],['Trx',x.trx||'—']]}));
+    if(type==='contribute')rows=(await api('contributions')).filter(x=>x.partner_id===cxSelected).map(x=>({title:(x.code||'Contribution')+' · '+x.project_name,cells:[['Date',fmtDT(x.created_at)],['Project',x.project_name],['Category',catLabel(x.category)],['Start',x.start_date?fmtDate(x.start_date):'—'],['Deadline',x.deadline?fmtDate(x.deadline):'—'],['Acquired',num(x.acquired).toLocaleString()],['Status',CONTRIB_STATUS[x.status]?.[0]||x.status]]}));
+    if(type==='performance')rows=(await api('performance')).filter(x=>x.partner_id===cxSelected).map(x=>({title:x.project_name+' · '+x.pct+'%',cells:[['Rank','#'+x.rank],['Project',x.project_name],['Category',catLabel(x.category)],['Start',x.start_date?fmtDate(x.start_date):'—'],['Deadline',x.deadline?fmtDate(x.deadline):'—'],['Assigned',num(x.assigned).toLocaleString()],['Acquired',num(x.acquired).toLocaleString()],['Achievement',x.pct+'%']]}));
+    ov.querySelector('.modal').innerHTML=`<h2>Attach ${esc(type)} details</h2><p>Select one row for ${esc(agent?.name||'selected agent')}.</p><div style="overflow:auto;max-height:520px"><table class="view-table"><thead><tr><th>Item</th><th>Summary</th><th></th></tr></thead><tbody>${rows.length?rows.map((r,i)=>`<tr><td><b>${esc(r.title)}</b></td><td>${r.cells.map(([k,v])=>`<span class="project-chip"><b>${esc(k)}:</b> ${esc(v)}</span>`).join('')}</td><td><button class="btn small" data-attach="${i}">Attach</button></td></tr>`).join(''):'<tr><td colspan="3" class="empty">No '+esc(type)+' data found for this agent.</td></tr>'}</tbody></table></div><div class="modal-actions"><button class="btn" data-close>Cancel</button></div>`;
+    ov.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>ov.remove());
+    ov.querySelectorAll('[data-attach]').forEach(b=>b.onclick=()=>{const r=rows[+b.dataset.attach];const block=`\n\n--- ConnectX Attachment: ${type.toUpperCase()} ---\n${r.title}\n${r.cells.map(([k,v])=>`${k}: ${v}`).join('\n')}\n--- End Attachment ---\n`;$('#cxBody').value=($('#cxBody').value||'')+block;ov.remove();toast('Attachment inserted into email body.')});
+  }catch(e){ov.querySelector('.modal').innerHTML=`<h2>Attach ${esc(type)} details</h2><div class="empty">${esc(e.message)}</div><div class="modal-actions"><button class="btn" data-close>Close</button></div>`;ov.querySelector('[data-close]').onclick=()=>ov.remove()}
+}
+function wireConnectXSettings(main,settings){
+  $('#cxSetSave').onclick=async()=>{
+    const btn=$('#cxSetSave');btn.disabled=true;btn.textContent='Saving…';
+    try{await mutate('connectx/settings',{method:'PATCH',body:JSON.stringify({enabled:$('#cxSetEnabled').value==='yes',from_name:$('#cxSetName').value,from_email:$('#cxSetEmail').value,reply_to:$('#cxSetReply').value,global_daily_limit:num($('#cxSetLimit').value)})});toast('ConnectX settings saved.');await aConnectX(main)}
+    catch(e){toast(e.message);btn.disabled=false;btn.textContent='Save settings'}
   };
 }
 function wireConnectXHistory(main,history){
