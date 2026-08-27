@@ -23,6 +23,9 @@ const cleanAccounts=list=>(Array.isArray(list)?list:[]).filter(a=>a&&(String(a.l
 const cleanDate=v=>{v=String(v||'').trim();return /^\d{4}-\d{2}-\d{2}$/.test(v)?v:null};
 const publicPartner=p=>{delete p.password_hash;return p};
 const publicAdminUser=u=>{if(!u)return u;delete u.password_hash;return u};
+const emailList=v=>String(v||'').split(/[;,]/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+const validEmail=x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x);
+const safeText=x=>String(x||'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 
 async function partnerStats(env,ids){
   const want=ids&&ids.length?ids:null;
@@ -411,6 +414,37 @@ export async function onRequest(context){
     }
 
     /* ---------- ADMIN API ---------- */
+
+
+    if(path==='connectx/contacts'&&method==='GET'){
+      const type=new URL(request.url).searchParams.get('type')||'agent';
+      if(type==='agent')return json((await db(env,'partners?select=id,partner_code,name,email,phone,status,type&order=created_at.desc')).map(x=>({id:x.id,type:'agent',code:x.partner_code,name:x.name,email:x.email,phone:x.phone,status:x.status,subtitle:'#'+x.partner_code+' · '+(x.type||'agent')})));
+      if(type==='user')return json((await db(env,'admin_users?status=eq.active&select=id,name,email,phone,status&order=created_at.desc')).map(x=>({id:x.id,type:'user',code:'USER',name:x.name,email:x.email,phone:x.phone,status:x.status,subtitle:'Board user'})));
+      return fail('Invalid recipient type. Use agent or user.',400);
+    }
+    if(path==='connectx/messages'&&method==='GET'){
+      return json(await db(env,'connectx_messages?select=*&order=created_at.desc&limit=300'));
+    }
+    if(path==='connectx/send'&&method==='POST'){
+      let b=await body(request),recipientType=['agent','user','manual'].includes(b.recipientType)?b.recipientType:'manual';
+      let to=emailList(b.to),cc=emailList(b.cc),bcc=emailList(b.bcc),recipientName=String(b.recipientName||'').slice(0,160),recipientId=b.recipientId||null;
+      if(recipientType==='agent'&&recipientId){let [r]=await db(env,`partners?id=eq.${recipientId}&select=id,name,email`);if(!r)return fail('Selected agent was not found.',404);recipientName=r.name;to=to.length?to:[r.email];}
+      if(recipientType==='user'&&recipientId){let [r]=await db(env,`admin_users?id=eq.${recipientId}&select=id,name,email,status`);if(!r)return fail('Selected user was not found.',404);if(r.status!=='active')return fail('Selected user is not active.',400);recipientName=r.name;to=to.length?to:[r.email];}
+      if(!to.length||![...to,...cc,...bcc].every(validEmail))return fail('Valid recipient email is required.');
+      if(!String(b.subject||'').trim())return fail('Subject is required.');
+      let [cfg]=await db(env,'connectx_settings?id=eq.1&select=*');
+      if(!cfg?.enabled)return fail('ConnectX sending is disabled.',403);
+      let today=new Date().toISOString().slice(0,10),used=await db(env,`connectx_messages?created_at=gte.${today}T00:00:00Z&status=eq.sent&select=id`);
+      if(used.length>=Number(cfg.global_daily_limit||0))return fail('ConnectX daily email limit has been reached.',429);
+      const senderName=cfg.from_name||'DoxTox ConnectX',fromEmail=cfg.from_email||'no-reply@doxtox.com';
+      const html='<div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55"><p style="margin:0 0 16px;color:#64748b;font-size:12px">Sent from <b>DoxTox ConnectX</b></p>'+safeText(b.body||'').replace(/\n/g,'<br>')+'</div>';
+      let [msg]=await db(env,'connectx_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sender_id:s.id,sender_kind:s.kind==='user'?'user':'owner',recipient_type:recipientType,recipient_id:recipientId,recipient_name:recipientName||null,from_email:fromEmail,to_emails:to,cc_emails:cc,bcc_emails:bcc,subject:String(b.subject).trim().slice(0,220),custom_body:String(b.body||'').slice(0,10000),body_html:html,provider:'brevo_api',status:'sending'})});
+      if(!env.BREVO_API_KEY){await db(env,`connectx_messages?id=eq.${msg.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'failed',error_message:'BREVO_API_KEY is not configured.',updated_at:new Date().toISOString()})});return fail('ConnectX provider is not configured. Add BREVO_API_KEY to Cloudflare secrets.',503)}
+      let res=await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',headers:{'api-key':env.BREVO_API_KEY,'content-type':'application/json'},body:JSON.stringify({sender:{name:senderName,email:fromEmail},replyTo:cfg.reply_to?{email:cfg.reply_to}:undefined,to:to.map(email=>({email})),...(cc.length?{cc:cc.map(email=>({email}))}:{}),...(bcc.length?{bcc:bcc.map(email=>({email}))}:{}),subject:msg.subject,htmlContent:html})}),out=await res.json().catch(()=>({}));
+      if(!res.ok){await db(env,`connectx_messages?id=eq.${msg.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'failed',error_message:out.message||'Provider rejected message',updated_at:new Date().toISOString()})});return fail('Email could not be sent: '+(out.message||'provider rejected message'),502)}
+      await db(env,`connectx_messages?id=eq.${msg.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'sent',provider_message_id:out.messageId||null,sent_at:new Date().toISOString(),updated_at:new Date().toISOString()})});
+      return json({ok:true,id:msg.id,messageId:out.messageId||null},201);
+    }
 
     if(path==='admin/profile'&&method==='GET'){
       return json(currentUser);
