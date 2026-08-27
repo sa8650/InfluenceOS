@@ -423,3 +423,15 @@ body.dashboard-mode .chat .loader-wrap{min-height:120px;background:transparent;b
 .cxstatus{font-size:11px;font-weight:800;border-radius:999px;padding:4px 8px;display:inline-block;text-transform:capitalize}
 .cxstatus.sent{background:#dcfce7;color:#15803d}.cxstatus.failed{background:#ffe4e6;color:#be123c}.cxstatus.sending,.cxstatus.queued{background:#fef3c7;color:#92400e}
 @media(max-width:760px){.connectx{grid-template-columns:1fr;border-radius:12px}.connectxnav{border-right:0;border-bottom:1px solid #e2e8f0;display:flex;overflow:auto;white-space:nowrap;padding:10px}.connectxbrand{display:none}.connectxnav button{flex:0 0 auto}.connectxmain{padding:15px}.cxcompose{grid-template-columns:1fr}.cxrecipient{border-right:0;border-bottom:1px solid #e2e8f0;padding:0 0 15px}.cxhead{margin-bottom:14px;align-items:flex-start;flex-direction:column}}
+
+/* ---------- SIDEBAR SCROLL FIX ---------- */
+.sidebar{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#444 transparent}
+.sidebar::-webkit-scrollbar{width:6px}.sidebar::-webkit-scrollbar-thumb{background:#444;border-radius:999px}.sidebar::-webkit-scrollbar-track{background:transparent}
+.sidebottom{flex-shrink:0}
+
+/* ---------- CONNECTX CC/BCC + SETTINGS ADDITIONS ---------- */
+.cx-mini-actions{display:flex;gap:8px;margin:2px 0 12px;flex-wrap:wrap}
+.cxfields select{width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:13px;background:#fafafa;outline:none;margin-top:5px}
+.cxfields select:focus{border-color:#111;background:#fff}
+.cx-optional{animation:cxFade .16s ease-out}
+@keyframes cxFade{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
