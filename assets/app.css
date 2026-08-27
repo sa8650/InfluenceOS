@@ -435,3 +435,6 @@ body.dashboard-mode .chat .loader-wrap{min-height:120px;background:transparent;b
 .cxfields select:focus{border-color:#111;background:#fff}
 .cx-optional{animation:cxFade .16s ease-out}
 @keyframes cxFade{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.cxattachbox{align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;font-size:12px;color:#475569}
+.cxattachbox b{text-transform:capitalize;color:#111}
+.cx-template{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12px;line-height:1.45;min-height:150px}
