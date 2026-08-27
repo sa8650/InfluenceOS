@@ -33,7 +33,18 @@ const CX_DEFAULT_TEMPLATES={
   contribute:`<div style="margin-top:22px;border:1px solid #111;padding:16px;font-family:Arial,sans-serif"><h3 style="margin:0 0 12px">Contribution Details</h3><p><b>Agent ID:</b> {{Agent ID}}</p><p><b>Date:</b> {{Date}}</p><p><b>Project:</b> {{Project}}</p><p><b>Category:</b> {{Category}}</p><p><b>Acquired:</b> {{Acquired}}</p><p><b>Status:</b> {{Status}}</p></div>`,
   performance:`<div style="margin-top:22px;border:1px solid #111;padding:16px;font-family:Arial,sans-serif"><h3 style="margin:0 0 12px">Performance Details</h3><p><b>Agent ID:</b> {{Agent ID}}</p><p><b>Rank:</b> {{Rank}}</p><p><b>Project:</b> {{Project}}</p><p><b>Category:</b> {{Category}}</p><p><b>Assigned:</b> {{Assigned}}</p><p><b>Acquired:</b> {{Acquired}}</p><p><b>Achievement:</b> {{Achievement}}</p></div>`
 };
-const cxTemplate=(cfg,type)=>cfg?.[`${type}_template_html`]||CX_DEFAULT_TEMPLATES[type]||'';
+const normalizeCxTemplate=html=>{
+  let x=String(html||'');
+  x=x.replace(/<!doctype[^>]*>/ig,'').replace(/<!--([\s\S]*?)-->/g,'');
+  x=x.replace(/<script\b[\s\S]*?<\/script>/ig,'');
+  x=x.replace(/<link\b[^>]*>/ig,'').replace(/<meta\b[^>]*>/ig,'').replace(/<title\b[\s\S]*?<\/title>/ig,'');
+  const styles=[...x.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/ig)].map(m=>m[0]).join('\n');
+  x=x.replace(/<style\b[^>]*>[\s\S]*?<\/style>/ig,'');
+  const body=x.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+  x=body?body[1]:x.replace(/<\/?html\b[^>]*>/ig,'').replace(/<head\b[\s\S]*?<\/head>/ig,'');
+  return styles+x;
+};
+const cxTemplate=(cfg,type)=>normalizeCxTemplate(cfg?.[`${type}_template_html`]||CX_DEFAULT_TEMPLATES[type]||'');
 const renderCxTemplate=(tpl,data={})=>String(tpl||'').replace(/{{\s*([^}]+?)\s*}}/g,(m,k)=>safeText(data[k.trim()]??data[k.trim().toLowerCase()]??''));
 
 async function partnerStats(env,ids){
@@ -427,7 +438,9 @@ export async function onRequest(context){
 
     if(path==='connectx/settings'&&method==='GET'){
       let [cfg]=await db(env,'connectx_settings?id=eq.1&select=*');
-      return json({...{id:1,enabled:true,from_name:'InfluenceOS',from_email:'no-reply@doxtox.com',reply_to:null,global_daily_limit:500},...Object.fromEntries(Object.entries(CX_DEFAULT_TEMPLATES).map(([k,v])=>[k+'_template_html',v])),...(cfg||{})});
+      const out={...{id:1,enabled:true,from_name:'InfluenceOS',from_email:'no-reply@doxtox.com',reply_to:null,global_daily_limit:500},...(cfg||{})};
+      for(const [k,v] of Object.entries(CX_DEFAULT_TEMPLATES)){if(!out[k+'_template_html'])out[k+'_template_html']=v}
+      return json(out);
     }
     if(path==='connectx/settings'&&method==='PATCH'){
       let b=await body(request),patch={updated_at:new Date().toISOString()};
@@ -463,10 +476,14 @@ export async function onRequest(context){
       let today=new Date().toISOString().slice(0,10),used=await db(env,`connectx_messages?created_at=gte.${today}T00:00:00Z&status=eq.sent&select=id`);
       if(used.length>=Number(cfg.global_daily_limit||0))return fail('ConnectX daily email limit has been reached.',429);
       const senderName=cfg.from_name||'InfluenceOS',fromEmail=cfg.from_email||'no-reply@doxtox.com';
-      let html='<div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55"><p style="margin:0 0 16px;color:#64748b;font-size:12px">Sent from <b>DoxTox ConnectX</b></p>'+safeText(b.body||'').replace(/\n/g,'<br>');
+      let attachmentHtml='',templateStyles='';
       const att=b.attachment&&typeof b.attachment==='object'?b.attachment:null;
-      if(att&&['allocation','payments','withdraw','contribute','performance'].includes(att.type)){html+=renderCxTemplate(cxTemplate(cfg,att.type),att.data||{});}
-      html+='</div>';
+      if(att&&['allocation','payments','withdraw','contribute','performance'].includes(att.type)){
+        attachmentHtml=renderCxTemplate(cxTemplate(cfg,att.type),att.data||{});
+        templateStyles=[...attachmentHtml.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/ig)].map(m=>m[0]).join('\n');
+        attachmentHtml=attachmentHtml.replace(/<style\b[^>]*>[\s\S]*?<\/style>/ig,'');
+      }
+      let html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+templateStyles+'</head><body style="margin:0;padding:16px;background:#f4f6fa"><div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55"><p style="margin:0 0 16px;color:#64748b;font-size:12px">Sent from <b>DoxTox ConnectX</b></p>'+safeText(b.body||'').replace(/\n/g,'<br>')+attachmentHtml+'</div></body></html>';
       let [msg]=await db(env,'connectx_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sender_id:s.id,sender_kind:s.kind==='user'?'user':'owner',recipient_type:recipientType,recipient_id:recipientId,recipient_name:recipientName||null,from_email:fromEmail,to_emails:to,cc_emails:cc,bcc_emails:bcc,subject:String(b.subject).trim().slice(0,220),custom_body:String(b.body||'').slice(0,10000),body_html:html,provider:'brevo_api',status:'sending'})});
       if(!env.BREVO_API_KEY){await db(env,`connectx_messages?id=eq.${msg.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'failed',error_message:'BREVO_API_KEY is not configured.',updated_at:new Date().toISOString()})});return fail('ConnectX provider is not configured. Add BREVO_API_KEY to Cloudflare secrets.',503)}
       let res=await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',headers:{'api-key':env.BREVO_API_KEY,'content-type':'application/json'},body:JSON.stringify({sender:{name:senderName,email:fromEmail},replyTo:cfg.reply_to?{email:cfg.reply_to}:undefined,to:to.map(email=>({email})),...(cc.length?{cc:cc.map(email=>({email}))}:{}),...(bcc.length?{bcc:bcc.map(email=>({email}))}:{}),subject:msg.subject,htmlContent:html})}),out=await res.json().catch(()=>({}));
