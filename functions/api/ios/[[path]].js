@@ -20,7 +20,9 @@ const PARTNER_STATUSES=['disagree','agree','not_response','waiting'];
 const ALLOCATION_STATUSES=['on_target','active','behind','inactive'];
 const PAYMENT_STATUSES=['scheduled','paid','pending'];
 const cleanAccounts=list=>(Array.isArray(list)?list:[]).filter(a=>a&&(String(a.label||'').trim()||String(a.url||'').trim())).slice(0,5).map(a=>({label:String(a.label||'').trim().slice(0,60),url:String(a.url||'').trim().slice(0,300)}));
+const cleanDate=v=>{v=String(v||'').trim();return /^\d{4}-\d{2}-\d{2}$/.test(v)?v:null};
 const publicPartner=p=>{delete p.password_hash;return p};
+const publicAdminUser=u=>{if(!u)return u;delete u.password_hash;return u};
 
 async function partnerStats(env,ids){
   const want=ids&&ids.length?ids:null;
@@ -34,7 +36,7 @@ async function partnerStats(env,ids){
 }
 function allocToRow(a,projectMap,partnerMap){
   const p=partnerMap[a.partner_id]||{},pr=projectMap[a.project_id]||{};
-  return {...a,partner_name:p.name||'—',partner_code:p.partner_code||'',project_name:pr.name||'—'};
+  return {...a,partner_name:p.name||'—',partner_code:p.partner_code||'',project_name:pr.name||'—',project_start_date:pr.start_date||null,project_deadline:pr.deadline||null};
 }
 function payToRow(p,projectMap,partnerMap){
   const pr=partnerMap[p.partner_id]||{},pg=projectMap[p.project_id]||{};
@@ -66,10 +68,22 @@ export async function onRequest(context){
       return json({token:await token({id:admin.id,role:'admin',exp:Math.floor(Date.now()/1000)+28800},env.IOS_SESSION_SECRET),user:{id:admin.id,name:admin.name,email:admin.email}});
     }
     if(path==='auth/admin/login'&&method==='POST'){
-      let b=await body(request),email=String(b.email||'').trim().toLowerCase();
+      let b=await body(request),email=String(b.email||'').trim().toLowerCase(),pass=String(b.password||'');
       let [admin]=await db(env,`admins?email=eq.${encodeURIComponent(email)}&select=*`);
-      if(!admin||!await check(String(b.password||''),admin.password_hash))return fail('Invalid email or password.',401);
-      return json({token:await token({id:admin.id,role:'admin',exp:Math.floor(Date.now()/1000)+28800},env.IOS_SESSION_SECRET),user:{id:admin.id,name:admin.name,email:admin.email}});
+      if(admin&&await check(pass,admin.password_hash))return json({token:await token({id:admin.id,role:'admin',kind:'owner',exp:Math.floor(Date.now()/1000)+28800},env.IOS_SESSION_SECRET),user:{id:admin.id,name:admin.name,email:admin.email,phone:admin.phone||'',address:admin.address||'',kind:'owner'}});
+      let [user]=await db(env,`admin_users?email=eq.${encodeURIComponent(email)}&select=*`);
+      if(!user||!await check(pass,user.password_hash))return fail('Invalid email or password.',401);
+      if(user.status==='pending')return fail('Your account request is waiting for admin confirmation.',403);
+      if(user.status!=='active')return fail('Your account is deactivated. Contact the administrator.',403);
+      return json({token:await token({id:user.id,role:'admin',kind:'user',exp:Math.floor(Date.now()/1000)+28800},env.IOS_SESSION_SECRET),user:{...publicAdminUser(user),kind:'user'}});
+    }
+    if(path==='auth/user/register'&&method==='POST'){
+      let b=await body(request),email=String(b.email||'').trim().toLowerCase();
+      if(!b.name||!email||!b.phone||!b.address||!b.password||String(b.password).length<6)return fail('Name, phone, address, email and a 6-character password are required.');
+      let [adminDup,userDup]=await Promise.all([db(env,`admins?email=eq.${encodeURIComponent(email)}&select=id`),db(env,`admin_users?email=eq.${encodeURIComponent(email)}&select=id`)]);
+      if(adminDup.length||userDup.length)return fail('An admin/user account with this email already exists.',409);
+      const [out]=await db(env,'admin_users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:String(b.address).slice(0,300),password_hash:await hash(String(b.password)),status:'pending'})});
+      return json({ok:true,user:publicAdminUser(out),message:'Account request submitted. Wait for administrator confirmation.'},201);
     }
     if(path==='auth/partner/login'&&method==='POST'){
       let b=await body(request),id=String(b.identifier||'').trim().toLowerCase();
@@ -103,9 +117,17 @@ export async function onRequest(context){
 
     let currentUser=null;
     if(s.role==='admin'){
-      let [admin]=await db(env,`admins?id=eq.${s.id}&select=id,name,email`);
-      if(!admin)return fail('This administrator account no longer exists.',403);
-      currentUser=admin;
+      if(s.kind==='user'){
+        let [user]=await db(env,`admin_users?id=eq.${s.id}&select=*`);
+        if(!user)return fail('This user account no longer exists.',403);
+        if(user.status==='pending')return fail('Your account request is waiting for admin confirmation.',403);
+        if(user.status!=='active')return fail('Your account is deactivated. Contact the administrator.',403);
+        currentUser={...publicAdminUser(user),kind:'user'};
+      }else{
+        let [admin]=await db(env,`admins?id=eq.${s.id}&select=id,name,email,phone,address`);
+        if(!admin)return fail('This administrator account no longer exists.',403);
+        currentUser={...admin,kind:'owner'};
+      }
     }
     // partner sessions stay valid only while the account exists & keeps access
     if(s.role==='partner'){
@@ -228,8 +250,8 @@ export async function onRequest(context){
           profile:null,
           stats,
           withdrawals:myWithdrawals,
-          projects:allocs.map(a=>({id:a.id,project:projectMap[a.project_id]||null,category:a.category||'users',assigned_target:a.assigned_target,acquired_users:a.acquired_users,commission:a.commission,status:a.status,note:a.note,pct:num(a.assigned_target)>0?Math.round(num(a.acquired_users)/num(a.assigned_target)*100):0})),
-          payments:pays.map(p=>payToRow(p,projectMap,{[s.id]:{name:'',partner_code:''}})),
+          projects:allocs.map(a=>({id:a.id,project:projectMap[a.project_id]||null,category:a.category||'users',assigned_target:a.assigned_target,acquired_users:a.acquired_users,commission:a.commission,status:a.status,note:a.note,start_date:a.start_date||null,deadline:a.deadline||null,pct:num(a.assigned_target)>0?Math.round(num(a.acquired_users)/num(a.assigned_target)*100):0})),
+          payments:pays.map(p=>{const ar=allocs.find(a=>a.project_id===p.project_id);return {...payToRow(p,projectMap,{[s.id]:{name:'',partner_code:''}}),start_date:ar?.start_date||null,deadline:ar?.deadline||null}}),
           performance:{projects:allocs.length,assigned,acquired,pct:assigned>0?Math.round(acquired/assigned*100):0,rank:rank||null,total:ranked.length}
         });
       }
@@ -238,9 +260,9 @@ export async function onRequest(context){
           db(env,`contributions?partner_id=eq.${s.id}&select=*&order=created_at.desc&limit=500`),
           db(env,'projects?select=id,name'),
           db(env,`contribution_files?partner_id=eq.${s.id}&select=*&order=created_at.asc`),
-          db(env,'allocations?select=id,category')]);
+          db(env,'allocations?select=id,category,start_date,deadline')]);
         const pm=Object.fromEntries(projects.map(x=>[x.id,x.name])),am=Object.fromEntries(allocs.map(x=>[x.id,x]));
-        return json(rows.map(c=>({...c,project_name:pm[c.project_id]||'—',category:am[c.allocation_id]?.category||'',files:files.filter(f=>f.contribution_id===c.id)})));
+        return json(rows.map(c=>({...c,project_name:pm[c.project_id]||'—',category:am[c.allocation_id]?.category||'',start_date:am[c.allocation_id]?.start_date||null,deadline:am[c.allocation_id]?.deadline||null,files:files.filter(f=>f.contribution_id===c.id)})));
       }
       if(path==='contributions'&&method==='POST'){
         if(!env.VAULTIUM&&!env.IOS_PROOF)return fail('File storage is not configured. Add the VAULTIUM R2 bucket binding.',500);
@@ -389,6 +411,51 @@ export async function onRequest(context){
     }
 
     /* ---------- ADMIN API ---------- */
+
+    if(path==='admin/profile'&&method==='GET'){
+      return json(currentUser);
+    }
+    if(path==='admin/profile'&&method==='PATCH'){
+      let b=await body(request),patch={};
+      for(const k of ['name','phone','address'])if(b[k]!==undefined)patch[k]=String(b[k]).slice(0,k==='address'?300:120);
+      if(b.email!==undefined){
+        let email=String(b.email).trim().toLowerCase();if(!email)return fail('Email cannot be empty.');
+        let [adminDup,userDup]=await Promise.all([db(env,`admins?email=eq.${encodeURIComponent(email)}&select=id`),db(env,`admin_users?email=eq.${encodeURIComponent(email)}&select=id`)]);
+        const selfOwner=s.kind!=='user', selfUser=s.kind==='user';
+        if((adminDup.length&&!(selfOwner&&adminDup[0].id===s.id))||(userDup.length&&!(selfUser&&userDup[0].id===s.id)))return fail('Another admin/user already uses this email.',409);
+        patch.email=email;
+      }
+      if(b.password){if(String(b.password).length<6)return fail('Password must be at least 6 characters.');patch.password_hash=await hash(String(b.password));}
+      const table=s.kind==='user'?'admin_users':'admins';
+      if(table==='admin_users')patch.updated_at=new Date().toISOString();
+      const [out]=await db(env,`${table}?id=eq.${s.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
+      return json({...publicAdminUser(out),kind:s.kind==='user'?'user':'owner'});
+    }
+    if(path==='admin/users'&&method==='GET'){
+      let rows=await db(env,'admin_users?select=*&order=created_at.desc');
+      return json(rows.map(publicAdminUser));
+    }
+    if(path==='admin/users'&&method==='POST'){
+      let b=await body(request),email=String(b.email||'').trim().toLowerCase();
+      if(!b.name||!email||!b.phone||!b.address||!b.password||String(b.password).length<6)return fail('Name, phone, address, email and a 6-character password are required.');
+      const status=['active','inactive','pending'].includes(b.status)?b.status:'active';
+      let [adminDup,userDup]=await Promise.all([db(env,`admins?email=eq.${encodeURIComponent(email)}&select=id`),db(env,`admin_users?email=eq.${encodeURIComponent(email)}&select=id`)]);
+      if(adminDup.length||userDup.length)return fail('An admin/user with this email already exists.',409);
+      const [out]=await db(env,'admin_users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:String(b.address).slice(0,300),password_hash:await hash(String(b.password)),status})});
+      return json(publicAdminUser(out),201);
+    }
+    if(path.startsWith('admin/users/')&&(method==='PATCH'||method==='DELETE')){
+      let id=path.split('/')[2];
+      if(method==='DELETE'){await db(env,`admin_users?id=eq.${id}`,{method:'DELETE'});return json({ok:true})}
+      let b=await body(request),patch={updated_at:new Date().toISOString()};
+      for(const k of ['name','phone','address'])if(b[k]!==undefined)patch[k]=String(b[k]).slice(0,k==='address'?300:120);
+      if(b.email!==undefined){let email=String(b.email).trim().toLowerCase();if(!email)return fail('Email cannot be empty.');let [adminDup,userDup]=await Promise.all([db(env,`admins?email=eq.${encodeURIComponent(email)}&select=id`),db(env,`admin_users?email=eq.${encodeURIComponent(email)}&select=id`)]);if(adminDup.length||(userDup.length&&userDup[0].id!==id))return fail('Another admin/user already uses this email.',409);patch.email=email;}
+      if(b.status!==undefined){if(!['active','inactive','pending'].includes(b.status))return fail('Invalid user status.');patch.status=b.status;}
+      if(b.password){if(String(b.password).length<6)return fail('Password must be at least 6 characters.');patch.password_hash=await hash(String(b.password));}
+      const [out]=await db(env,`admin_users?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
+      return json(publicAdminUser(out));
+    }
+
     if(path==='overview'&&method==='GET'){
       let [partners,projects,allocs,pays]=await Promise.all([
         db(env,'partners?select=id,name,partner_code,status,type&order=created_at.desc'),
@@ -487,7 +554,7 @@ export async function onRequest(context){
       let b=await body(request);
       if(!b.name)return fail('Project name is required.');
       if(num(b.budget)<0)return fail('Budget cannot be negative.');
-      let [out]=await db(env,'projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:String(b.name).slice(0,120),details:b.details?String(b.details).slice(0,1000):null,budget:num(b.budget),note:b.note?String(b.note).slice(0,500):null,status:b.status==='inactive'?'inactive':'active'})});
+      let [out]=await db(env,'projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:String(b.name).slice(0,120),details:b.details?String(b.details).slice(0,1000):null,budget:num(b.budget),start_date:cleanDate(b.start_date),deadline:cleanDate(b.deadline),note:b.note?String(b.note).slice(0,500):null,status:b.status==='inactive'?'inactive':'active'})});
       return json(out,201);
     }
     if(path.startsWith('projects/')&&(method==='PATCH'||method==='DELETE')){
@@ -496,13 +563,15 @@ export async function onRequest(context){
       let b=await body(request),patch={updated_at:new Date().toISOString()};
       for(const k of ['name','details','note'])if(b[k]!==undefined)patch[k]=String(b[k]).slice(0,1000);
       if(b.budget!==undefined)patch.budget=num(b.budget);
+      if(b.start_date!==undefined)patch.start_date=cleanDate(b.start_date);
+      if(b.deadline!==undefined)patch.deadline=cleanDate(b.deadline);
       if(b.status!==undefined)patch.status=b.status==='inactive'?'inactive':'active';
       let [out]=await db(env,`projects?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
       return json(out);
     }
 
     if(path==='allocations'&&method==='GET'){
-      let [allocs,projects,partners]=await Promise.all([db(env,'allocations?select=*&order=created_at.desc'),db(env,'projects?select=id,name'),db(env,'partners?select=id,name,partner_code')]);
+      let [allocs,projects,partners]=await Promise.all([db(env,'allocations?select=*&order=created_at.desc'),db(env,'projects?select=id,name,start_date,deadline'),db(env,'partners?select=id,name,partner_code')]);
       const pm=Object.fromEntries(projects.map(x=>[x.id,x])),sm=Object.fromEntries(partners.map(x=>[x.id,x]));
       return json(allocs.map(a=>allocToRow(a,pm,sm)));
     }
@@ -518,7 +587,7 @@ export async function onRequest(context){
       if(partner.status!=='agree')return fail('Only agents with status “Agree” can be allocated to a project.',400);
       let dup=await db(env,`allocations?project_id=eq.${b.project_id}&partner_id=eq.${b.partner_id}&category=eq.${category}&select=id`);
       if(dup.length)return fail('This agent already has an allocation for this project with the “'+category+'” category.',409);
-      let [out]=await db(env,'allocations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({project_id:b.project_id,partner_id:b.partner_id,category,assigned_target:Math.max(0,Math.round(num(b.assigned_target))),acquired_users:0,commission:0,note:b.note?String(b.note).slice(0,500):null,status:b.status})});
+      let [out]=await db(env,'allocations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({project_id:b.project_id,partner_id:b.partner_id,category,assigned_target:Math.max(0,Math.round(num(b.assigned_target))),acquired_users:0,commission:0,start_date:cleanDate(b.start_date),deadline:cleanDate(b.deadline),note:b.note?String(b.note).slice(0,500):null,status:b.status})});
       return json(out,201);
     }
     if(path.startsWith('allocations/')&&(method==='PATCH'||method==='DELETE')){
@@ -527,6 +596,8 @@ export async function onRequest(context){
       let b=await body(request),patch={updated_at:new Date().toISOString()};
       if(b.assigned_target!==undefined)patch.assigned_target=Math.max(0,Math.round(num(b.assigned_target)));
       if(b.note!==undefined)patch.note=String(b.note).slice(0,500);
+      if(b.start_date!==undefined)patch.start_date=cleanDate(b.start_date);
+      if(b.deadline!==undefined)patch.deadline=cleanDate(b.deadline);
       if(b.status!==undefined){if(!ALLOCATION_STATUSES.includes(b.status))return fail('Invalid allocation status.');patch.status=b.status}
       // acquired_users & commission are automated (contributions & payments) and never edited manually
       let [out]=await db(env,`allocations?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
@@ -534,9 +605,9 @@ export async function onRequest(context){
     }
 
     if(path==='payments'&&method==='GET'){
-      let [pays,projects,partners]=await Promise.all([db(env,'payments?select=*&order=payment_date.desc,created_at.desc&limit=1000'),db(env,'projects?select=id,name'),db(env,'partners?select=id,name,partner_code')]);
+      let [pays,projects,partners,allocs]=await Promise.all([db(env,'payments?select=*&order=payment_date.desc,created_at.desc&limit=1000'),db(env,'projects?select=id,name,start_date,deadline'),db(env,'partners?select=id,name,partner_code'),db(env,'allocations?select=project_id,partner_id,start_date,deadline')]);
       const pm=Object.fromEntries(projects.map(x=>[x.id,x])),sm=Object.fromEntries(partners.map(x=>[x.id,x]));
-      return json(pays.map(p=>payToRow(p,pm,sm)));
+      return json(pays.map(p=>{const ar=allocs.find(a=>a.project_id===p.project_id&&a.partner_id===p.partner_id);return {...payToRow(p,pm,sm),start_date:ar?.start_date||null,deadline:ar?.deadline||null}}));
     }
     if(path==='payments'&&method==='POST'){
       let b=await body(request);
@@ -585,7 +656,7 @@ export async function onRequest(context){
         db(env,'partners?select=id,name,partner_code,type'),
         db(env,'projects?select=id,name')]);
       const pm=Object.fromEntries(projects.map(x=>[x.id,x.name])),sm=Object.fromEntries(partners.map(x=>[x.id,x]));
-      const rows=allocs.map(a=>({id:a.id,partner_id:a.partner_id,name:sm[a.partner_id]?.name||'—',partner_code:sm[a.partner_id]?.partner_code||'',type:sm[a.partner_id]?.type||'',project_id:a.project_id,project_name:pm[a.project_id]||'—',category:a.category||'users',assigned:num(a.assigned_target),acquired:num(a.acquired_users),commission:num(a.commission),pct:num(a.assigned_target)>0?Math.round(num(a.acquired_users)/num(a.assigned_target)*100):0})).sort((a,b)=>b.pct-a.pct||b.acquired-a.acquired);
+      const rows=allocs.map(a=>({id:a.id,partner_id:a.partner_id,name:sm[a.partner_id]?.name||'—',partner_code:sm[a.partner_id]?.partner_code||'',type:sm[a.partner_id]?.type||'',project_id:a.project_id,project_name:pm[a.project_id]||'—',category:a.category||'users',assigned:num(a.assigned_target),acquired:num(a.acquired_users),commission:num(a.commission),start_date:a.start_date||null,deadline:a.deadline||null,pct:num(a.assigned_target)>0?Math.round(num(a.acquired_users)/num(a.assigned_target)*100):0})).sort((a,b)=>b.pct-a.pct||b.acquired-a.acquired);
       return json(rows.map((r,i)=>({...r,rank:i+1})));
     }
 
@@ -606,7 +677,7 @@ export async function onRequest(context){
         db(env,'allocations?select=id,project_id,category'),
         db(env,'contribution_files?select=*&order=created_at.asc')]);
       const pm=Object.fromEntries(projects.map(x=>[x.id,x.name])),sm=Object.fromEntries(partners.map(x=>[x.id,x])),am=Object.fromEntries(allocs.map(x=>[x.id,x]));
-      return json(rows.map(c=>({...c,partner_name:sm[c.partner_id]?.name||'—',partner_code:sm[c.partner_id]?.partner_code||'',project_name:pm[c.project_id]||'—',category:am[c.allocation_id]?.category||'',files:files.filter(f=>f.contribution_id===c.id)})));
+      return json(rows.map(c=>({...c,partner_name:sm[c.partner_id]?.name||'—',partner_code:sm[c.partner_id]?.partner_code||'',project_name:pm[c.project_id]||'—',category:am[c.allocation_id]?.category||'',start_date:am[c.allocation_id]?.start_date||null,deadline:am[c.allocation_id]?.deadline||null,files:files.filter(f=>f.contribution_id===c.id)})));
     }
     if(path.startsWith('contributions/')&&method==='PATCH'){
       const id=path.split('/')[1];
