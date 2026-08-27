@@ -261,7 +261,7 @@ function adminApp(){
   document.body.classList.remove('landing-mode');
   document.body.classList.add('dashboard-mode');
   document.title='InfluenceOS — Admin';
-  const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']];
+  const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['connectx','✉','ConnectX'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']];
   app.innerHTML=`<div class="app">
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>powered by DoxTox</small></div>
@@ -287,6 +287,7 @@ async function renderAdmin(){
     if(aView==='projects')return await aProjects(main);
     if(aView==='contribute')return await aContribute(main);
     if(aView==='vaultium')return await aVaultium(main);
+    if(aView==='connectx')return await aConnectX(main);
     if(aView==='helpdesk')return await aHelpdesk(main);
     if(aView==='allocations')return await aAllocations(main);
     if(aView==='payments')return await aPayments(main);
@@ -880,6 +881,75 @@ function aSettings(main){
 }
 
 
+
+/* ---------- ADMIN: CONNECTX ---------- */
+let cxView='compose', cxRecipientType='agent', cxSelected=null, cxContacts=[];
+async function aConnectX(main){
+  loading(main);
+  const [contacts,history]=await Promise.all([api('connectx/contacts?type='+cxRecipientType),api('connectx/messages')]);
+  cxContacts=contacts;
+  renderConnectX(main,contacts,history);
+}
+function cxStatus(s){return `<span class="cxstatus ${esc(s||'queued')}">${esc(s||'queued')}</span>`}
+function renderConnectX(main,contacts,history){
+  main.innerHTML=`
+  <div class="top"><div class="title"><h1>ConnectX</h1><p>Central mail communication system powered by DoxTox.</p></div></div>
+  <div class="connectx">
+    <aside class="connectxnav">
+      <div class="connectxbrand">✉ ConnectX<small>powered by DoxTox</small></div>
+      <button class="${cxView==='compose'?'on':''}" data-cx="compose">Compose</button>
+      <button class="${cxView==='history'?'on':''}" data-cx="history">History <small>${history.length}</small></button>
+    </aside>
+    <section class="connectxmain">${cxView==='compose'?connectXCompose(contacts):connectXHistory(history)}</section>
+  </div>`;
+  main.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{cxView=b.dataset.cx;renderConnectX(main,contacts,history)});
+  if(cxView==='compose')wireConnectXCompose(main);
+  else wireConnectXHistory(main,history);
+}
+function connectXCompose(contacts){
+  const selected=contacts.find(x=>x.id===cxSelected);
+  return `<div class="cxhead"><div><h2>Compose message</h2><span>Choose recipient type Agent or User, then send email through ConnectX.</span></div></div>
+  <div class="cxcompose">
+    <div class="cxrecipient">
+      <label><span>Recipient type</span><select id="cxType"><option value="agent" ${cxRecipientType==='agent'?'selected':''}>Agent</option><option value="user" ${cxRecipientType==='user'?'selected':''}>User</option></select></label>
+      <div class="cxsearch"><input id="cxSearch" class="search" style="width:100%;max-width:none" placeholder="Search ${cxRecipientType}s…"></div>
+      <div class="cxlist" id="cxList">${contacts.length?contacts.map(c=>`<div class="cxcontact ${c.id===cxSelected?'on':''}" data-cxpick="${c.id}"><b>${esc(c.name)}</b><span>${esc(c.email)}</span><small>${esc(c.subtitle||c.phone||'')}</small></div>`).join(''):'<div class="empty">No active recipients found.</div>'}</div>
+    </div>
+    <div class="cxfields">
+      <label>To<input id="cxTo" value="${esc(selected?.email||'')}" placeholder="recipient@email.com"></label>
+      <label>CC <small class="muted">optional, comma separated</small><input id="cxCc" placeholder="cc@email.com"></label>
+      <label>BCC <small class="muted">optional, comma separated</small><input id="cxBcc" placeholder="bcc@email.com"></label>
+      <label>Subject<input id="cxSubject" placeholder="Subject"></label>
+      <label>Message<textarea id="cxBody" rows="9" placeholder="Write your message…"></textarea></label>
+      <button class="btn dark" id="cxSend">Send email</button>
+    </div>
+  </div>`;
+}
+function connectXHistory(history){
+  return `<div class="cxhead"><div><h2>Mail history</h2><span>Latest ConnectX messages sent to agents and users.</span></div><button class="btn" id="cxRefresh">Refresh</button></div>
+  <div class="cxsearch"><input id="cxHistSearch" class="search" placeholder="Search subject, email, recipient…"></div>
+  <div style="overflow:auto"><table class="view-table"><thead><tr><th>Date</th><th>Recipient type</th><th>Recipient</th><th>To</th><th>Subject</th><th>Status</th><th></th></tr></thead>
+  <tbody id="cxHistBody">${history.length?history.map(m=>cxHistoryRow(m)).join(''):'<tr><td colspan="7" class="empty">No ConnectX messages yet.</td></tr>'}</tbody></table></div>`;
+}
+function cxHistoryRow(m){return `<tr><td>${fmtDT(m.created_at)}</td><td>${esc(m.recipient_type)}</td><td>${esc(m.recipient_name||'—')}</td><td>${esc((m.to_emails||[]).join(', '))}</td><td><b>${esc(m.subject)}</b>${m.error_message?`<small class="muted" style="display:block;color:#c62828">${esc(m.error_message)}</small>`:''}</td><td>${cxStatus(m.status)}</td><td><button class="btn small" data-cxview="${m.id}">View</button></td></tr>`}
+function wireConnectXCompose(main){
+  $('#cxType').onchange=async e=>{cxRecipientType=e.target.value;cxSelected=null;loading($('.connectxmain'));cxContacts=await api('connectx/contacts?type='+cxRecipientType);const hist=await api('connectx/messages');renderConnectX(main,cxContacts,hist)};
+  $('#cxSearch').oninput=e=>{const q=e.target.value.toLowerCase();$('#cxList').innerHTML=cxContacts.filter(c=>!q||(c.name+' '+c.email+' '+(c.code||'')).toLowerCase().includes(q)).map(c=>`<div class="cxcontact ${c.id===cxSelected?'on':''}" data-cxpick="${c.id}"><b>${esc(c.name)}</b><span>${esc(c.email)}</span><small>${esc(c.subtitle||c.phone||'')}</small></div>`).join('')||'<div class="empty">No recipient found.</div>';wireCxPick()};
+  const wireCxPick=()=>document.querySelectorAll('[data-cxpick]').forEach(el=>el.onclick=()=>{cxSelected=el.dataset.cxpick;const c=cxContacts.find(x=>x.id===cxSelected);$('#cxTo').value=c?.email||'';document.querySelectorAll('[data-cxpick]').forEach(x=>x.classList.toggle('on',x===el))});
+  wireCxPick();
+  $('#cxSend').onclick=async()=>{
+    const btn=$('#cxSend');btn.disabled=true;btn.textContent='Sending…';
+    try{await mutate('connectx/send',{method:'POST',body:JSON.stringify({recipientType:cxRecipientType,recipientId:cxSelected,to:$('#cxTo').value,cc:$('#cxCc').value,bcc:$('#cxBcc').value,subject:$('#cxSubject').value,body:$('#cxBody').value,recipientName:cxContacts.find(x=>x.id===cxSelected)?.name||''})});toast('Email sent through ConnectX.');cxView='history';await aConnectX(main)}
+    catch(e){toast(e.message);btn.disabled=false;btn.textContent='Send email'}
+  };
+}
+function wireConnectXHistory(main,history){
+  $('#cxRefresh').onclick=()=>aConnectX(main);
+  $('#cxHistSearch').oninput=e=>{const q=e.target.value.toLowerCase(),rows=history.filter(m=>!q||((m.subject||'')+' '+(m.recipient_name||'')+' '+(m.to_emails||[]).join(' ')).toLowerCase().includes(q));$('#cxHistBody').innerHTML=rows.length?rows.map(cxHistoryRow).join(''):'<tr><td colspan="7" class="empty">No message found.</td></tr>';wireConnectXHistory(main,rows)};
+  main.querySelectorAll('[data-cxview]').forEach(b=>b.onclick=()=>{const m=history.find(x=>x.id===b.dataset.cxview);if(!m)return;modal(`<h2>${esc(m.subject)}</h2><p>${esc(m.recipient_type)} · ${esc(m.recipient_name||'—')} · ${fmtDT(m.created_at)}</p><div class="kv"><span>To</span><b>${esc((m.to_emails||[]).join(', '))}</b><span>CC</span><b>${esc((m.cc_emails||[]).join(', ')||'—')}</b><span>BCC</span><b>${esc((m.bcc_emails||[]).join(', ')||'—')}</b><span>Status</span><b>${esc(m.status)}</b></div><div class="section-box"><div style="white-space:pre-wrap;font-size:13px;line-height:1.6">${esc(m.custom_body||'')}</div></div><div class="modal-actions"><button class="btn dark" data-close>Close</button></div>`)});
+}
+
+
 /* ---------- ADMIN: USER PROFILE ---------- */
 async function aAdminProfile(main){
   loading(main);
@@ -972,7 +1042,7 @@ function partnerApp(){
   document.body.classList.remove('landing-mode');
   document.body.classList.add('dashboard-mode');
   document.title='InfluenceOS — Agent';
-  const nav=[['profile','◉','Profile'],['team','☰','My Team'],['allocations','◌','Allocations'],['contribute','⇧','Contribute'],['projects','◆','Projects'],['payments','$','Payments'],['performance','◫','Performance'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']];
+  const nav=[['profile','◉','Profile'],['team','☰','My Team'],['allocations','◌','Allocations'],['contribute','⇧','Contribute'],['projects','◆','Projects'],['payments','$','Payments'],['performance','◫','Performance'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
   app.innerHTML=`<div class="app">
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>agent portal · DoxTox</small></div>
