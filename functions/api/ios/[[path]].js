@@ -416,6 +416,21 @@ export async function onRequest(context){
     /* ---------- ADMIN API ---------- */
 
 
+    if(path==='connectx/settings'&&method==='GET'){
+      let [cfg]=await db(env,'connectx_settings?id=eq.1&select=*');
+      return json(cfg||{id:1,enabled:true,from_name:'InfluenceOS',from_email:'no-reply@doxtox.com',reply_to:null,global_daily_limit:500});
+    }
+    if(path==='connectx/settings'&&method==='PATCH'){
+      let b=await body(request),patch={updated_at:new Date().toISOString()};
+      if(b.enabled!==undefined)patch.enabled=!!b.enabled;
+      if(b.from_name!==undefined)patch.from_name=String(b.from_name||'InfluenceOS').slice(0,120);
+      if(b.from_email!==undefined){let e=String(b.from_email||'').trim().toLowerCase();if(!validEmail(e))return fail('Valid From email is required.');patch.from_email=e;}
+      if(b.reply_to!==undefined){let e=String(b.reply_to||'').trim().toLowerCase();if(e&&!validEmail(e))return fail('Reply-to email must be valid.');patch.reply_to=e||null;}
+      if(b.global_daily_limit!==undefined)patch.global_daily_limit=Math.max(0,Math.round(num(b.global_daily_limit)));
+      let [cfg]=await db(env,'connectx_settings?id=eq.1',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
+      return json(cfg);
+    }
+
     if(path==='connectx/contacts'&&method==='GET'){
       const type=new URL(request.url).searchParams.get('type')||'agent';
       if(type==='agent')return json((await db(env,'partners?select=id,partner_code,name,email,phone,status,type&order=created_at.desc')).map(x=>({id:x.id,type:'agent',code:x.partner_code,name:x.name,email:x.email,phone:x.phone,status:x.status,subtitle:'#'+x.partner_code+' · '+(x.type||'agent')})));
@@ -433,10 +448,11 @@ export async function onRequest(context){
       if(!to.length||![...to,...cc,...bcc].every(validEmail))return fail('Valid recipient email is required.');
       if(!String(b.subject||'').trim())return fail('Subject is required.');
       let [cfg]=await db(env,'connectx_settings?id=eq.1&select=*');
+      cfg=cfg||{enabled:true,from_name:'InfluenceOS',from_email:'no-reply@doxtox.com',global_daily_limit:500};
       if(!cfg?.enabled)return fail('ConnectX sending is disabled.',403);
       let today=new Date().toISOString().slice(0,10),used=await db(env,`connectx_messages?created_at=gte.${today}T00:00:00Z&status=eq.sent&select=id`);
       if(used.length>=Number(cfg.global_daily_limit||0))return fail('ConnectX daily email limit has been reached.',429);
-      const senderName=cfg.from_name||'DoxTox ConnectX',fromEmail=cfg.from_email||'no-reply@doxtox.com';
+      const senderName=cfg.from_name||'InfluenceOS',fromEmail=cfg.from_email||'no-reply@doxtox.com';
       const html='<div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55"><p style="margin:0 0 16px;color:#64748b;font-size:12px">Sent from <b>DoxTox ConnectX</b></p>'+safeText(b.body||'').replace(/\n/g,'<br>')+'</div>';
       let [msg]=await db(env,'connectx_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sender_id:s.id,sender_kind:s.kind==='user'?'user':'owner',recipient_type:recipientType,recipient_id:recipientId,recipient_name:recipientName||null,from_email:fromEmail,to_emails:to,cc_emails:cc,bcc_emails:bcc,subject:String(b.subject).trim().slice(0,220),custom_body:String(b.body||'').slice(0,10000),body_html:html,provider:'brevo_api',status:'sending'})});
       if(!env.BREVO_API_KEY){await db(env,`connectx_messages?id=eq.${msg.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'failed',error_message:'BREVO_API_KEY is not configured.',updated_at:new Date().toISOString()})});return fail('ConnectX provider is not configured. Add BREVO_API_KEY to Cloudflare secrets.',503)}
