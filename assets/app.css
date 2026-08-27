@@ -398,3 +398,28 @@ body.dashboard-mode .loader-wrap{
 }
 body.dashboard-mode .main>.loader-wrap{margin-top:8px}
 body.dashboard-mode .chat .loader-wrap{min-height:120px;background:transparent;box-shadow:none}
+
+/* ---------- CONNECTX CENTRAL MAIL WORKSPACE ---------- */
+.connectx{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:600px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;box-shadow:0 4px 15px #0f172a0b}
+.connectxnav{background:#f8fafc;padding:16px 12px;border-right:1px solid #e2e8f0;display:grid;align-content:start;gap:6px}
+.connectxbrand{padding:8px 10px 18px;color:#111;font-size:18px;font-weight:800}
+.connectxbrand small{display:block;font-size:10px;color:#64748b;margin-left:25px;font-weight:500}
+.connectxnav button{border:0;background:transparent;color:#475569;text-align:left;border-radius:999px;padding:10px 13px;font-weight:700}
+.connectxnav button:hover,.connectxnav button.on{background:#111;color:#fff}
+.connectxnav button small{float:right;opacity:.75}
+.connectxmain{padding:24px;min-width:0;background:#fff}
+.cxhead{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2e8f0;padding-bottom:15px;margin-bottom:18px;gap:12px}
+.cxhead h2{margin:0;font-size:20px}.cxhead span{font-size:12px;color:#64748b}
+.cxcompose{display:grid;grid-template-columns:300px minmax(0,1fr);gap:22px}
+.cxrecipient{border-right:1px solid #e2e8f0;padding-right:20px;min-width:0}
+.cxrecipient label,.cxfields label{display:block;margin-bottom:12px;font-size:12px;font-weight:700;color:#111}
+.cxrecipient select,.cxfields input,.cxfields textarea{width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:13px;background:#fafafa;outline:none;margin-top:5px}
+.cxfields input:focus,.cxfields textarea:focus,.cxrecipient select:focus{border-color:#111;background:#fff}
+.cxlist{display:grid;gap:7px;max-height:410px;overflow:auto;padding-right:4px}
+.cxcontact{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;color:#64748b;font-size:12px;display:grid;gap:4px;cursor:pointer}
+.cxcontact:hover,.cxcontact.on{background:#fff;border-color:#111;box-shadow:0 8px 22px rgba(15,23,42,.08)}
+.cxcontact b{color:#0f172a;font-size:14px}.cxcontact span{word-break:break-word}.cxcontact small{color:#888}
+.cxfields{max-width:760px}.cxfields button{border-radius:8px;margin-top:4px}.cxsearch{margin-bottom:14px}.cxsearch input{max-width:360px}
+.cxstatus{font-size:11px;font-weight:800;border-radius:999px;padding:4px 8px;display:inline-block;text-transform:capitalize}
+.cxstatus.sent{background:#dcfce7;color:#15803d}.cxstatus.failed{background:#ffe4e6;color:#be123c}.cxstatus.sending,.cxstatus.queued{background:#fef3c7;color:#92400e}
+@media(max-width:760px){.connectx{grid-template-columns:1fr;border-radius:12px}.connectxnav{border-right:0;border-bottom:1px solid #e2e8f0;display:flex;overflow:auto;white-space:nowrap;padding:10px}.connectxbrand{display:none}.connectxnav button{flex:0 0 auto}.connectxmain{padding:15px}.cxcompose{grid-template-columns:1fr}.cxrecipient{border-right:0;border-bottom:1px solid #e2e8f0;padding:0 0 15px}.cxhead{margin-bottom:14px;align-items:flex-start;flex-direction:column}}
