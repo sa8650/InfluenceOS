@@ -46,7 +46,7 @@ function filesCell(files){
 }
 function filesModal(files){
   const ov=modal(`<h2>Proof files (${files.length})</h2><p>Click a file to open it in a new tab.</p>
-  ${files.map(f=>`<div class="target-row"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.n)}</b><span>${fmtSize(f.s)}</span><button class="btn small" data-view="${f.id}" data-name="${esc(f.n)}">View</button><button class="btn small" data-dl="${f.id}" data-name="${esc(f.n)}">Download</button></div>`).join('')}
+  ${files.map(f=>`<div class="target-row"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.n)}</b><span>${fmtSize(f.s)}</span>${can('vaultium','view')?`<button class="btn small" data-view="${f.id}" data-name="${esc(f.n)}">View</button>`:''}${can('vaultium','download')?`<button class="btn small" data-dl="${f.id}" data-name="${esc(f.n)}">Download</button>`:''}</div>`).join('')}
   <div class="modal-actions"><button class="btn" data-close>Close</button></div>`);
   ov.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>openFile(b.dataset.view,b.dataset.name,false));
   ov.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>openFile(b.dataset.dl,b.dataset.name,true));
@@ -515,7 +515,7 @@ function projectModal(p){
 let payFilterQ='';
 async function aPayments(main){
   loading(main);
-  const [payments,partners,allocations,withdrawals]=await Promise.all([api('payments'),api('partners'),api('allocations'),api('withdrawals')]);
+  const [payments,partners,allocations,withdrawals]=await Promise.all([api('payments'),api('partners').catch(()=>[]),api('allocations').catch(()=>[]),api('withdrawals').catch(()=>[])]);
   renderPaymentsView(main,payments,partners,allocations,withdrawals);
 }
 function renderPaymentsView(main,payments,partners,allocations,withdrawals){
@@ -653,7 +653,7 @@ function paymentModal(partners,allocations,payments){
 let aFilterQ='';
 async function aAllocations(main){
   loading(main);
-  const bundle=await Promise.all([api('allocations'),api('projects'),api('partners'),api('team-allocations')]);
+  const bundle=await Promise.all([api('allocations'),api('projects').catch(()=>[]),api('partners').catch(()=>[]),api('team-allocations').catch(()=>[])]);
   renderAllocationsView(main,bundle[0],bundle[1],bundle[2],bundle[3]);
 }
 function renderAllocationsView(main,allocs,projects,partners,teamAllocs=[]){
@@ -917,8 +917,18 @@ function aSettings(main){
 /* ---------- ADMIN: CONNECTX ---------- */
 let cxView='compose', cxRecipientType='agent', cxSelected=null, cxContacts=[], cxAttachment=null;
 async function aConnectX(main){
+  if(!can('connectx','compose')&&!can('connectx','history')&&!can('connectx','settings')){
+    main.innerHTML=`
+  <div class="top"><div class="title"><h1>ConnectX</h1><p>Central mail communication system powered by DoxTox.</p></div></div>
+  <div class="section-box"><div class="empty" style="padding:70px 20px"><b>ConnectX access is limited</b><br><small>Your account can see this page, but Compose, History and Settings are not enabled. Ask the primary administrator to enable them in User Control.</small></div></div>`;
+    return;
+  }
   loading(main);
-  const [contacts,history,settings]=await Promise.all([api('connectx/contacts?type='+cxRecipientType),api('connectx/messages'),api('connectx/settings')]);
+  const [contacts,history,settings]=await Promise.all([
+    can('connectx','show')||can('connectx','compose')?api('connectx/contacts?type='+cxRecipientType).catch(()=>[]):Promise.resolve([]),
+    can('connectx','history')?api('connectx/messages').catch(()=>[]):Promise.resolve([]),
+    can('connectx','settings')?api('connectx/settings').catch(()=>({})):Promise.resolve({})
+  ]);
   cxContacts=contacts;
   renderConnectX(main,contacts,history,settings);
 }
@@ -992,7 +1002,7 @@ function cxHistoryRow(m){return `<tr><td>${fmtDT(m.created_at)}</td><td>${esc(m.
 function wireConnectXCompose(main){
   $('#showCc').onclick=()=>{$('#cxCcWrap').style.display='block';$('#showCc').style.display='none';$('#cxCc').focus()};
   $('#showBcc').onclick=()=>{$('#cxBccWrap').style.display='block';$('#showBcc').style.display='none';$('#cxBcc').focus()};
-  $('#cxType').onchange=async e=>{cxRecipientType=e.target.value;cxSelected=null;cxAttachment=null;loading($('.connectxmain'));cxContacts=await api('connectx/contacts?type='+cxRecipientType);const [hist,set]=await Promise.all([api('connectx/messages'),api('connectx/settings')]);renderConnectX(main,cxContacts,hist,set)};
+  $('#cxType').onchange=async e=>{cxRecipientType=e.target.value;cxSelected=null;cxAttachment=null;loading($('.connectxmain'));cxContacts=await api('connectx/contacts?type='+cxRecipientType).catch(()=>[]);const [hist,set]=await Promise.all([api('connectx/messages').catch(()=>[]),api('connectx/settings').catch(()=>({}))]);renderConnectX(main,cxContacts,hist,set)};
   $('#cxSearch').oninput=e=>{const q=e.target.value.toLowerCase();$('#cxList').innerHTML=cxContacts.filter(c=>!q||(c.name+' '+c.email+' '+(c.code||'')).toLowerCase().includes(q)).map(c=>`<div class="cxcontact ${c.id===cxSelected?'on':''}" data-cxpick="${c.id}"><b>${esc(c.name)}</b><span>${esc(c.email)}</span><small>${esc(c.subtitle||c.phone||'')}</small></div>`).join('')||'<div class="empty">No recipient found.</div>';wireCxPick()};
   const wireCxPick=()=>document.querySelectorAll('[data-cxpick]').forEach(el=>el.onclick=()=>{cxSelected=el.dataset.cxpick;cxAttachment=null;const c=cxContacts.find(x=>x.id===cxSelected);$('#cxTo').value=c?.email||'';document.querySelectorAll('[data-cxpick]').forEach(x=>x.classList.toggle('on',x===el))});
   wireCxPick();
