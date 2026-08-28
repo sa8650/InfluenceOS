@@ -53,32 +53,49 @@ function notify(key,data){
 }
 function onKey(key,fn){let s=subs.get(key);if(!s){s=new Set();subs.set(key,s)}s.add(fn);return()=>s.delete(fn)}
 
-/* the loader only ever shows when the view is EMPTY (first paint). Background refresh never shows it. */
+/* the loader only ever shows on FIRST entry to a view (never during background refresh).
+   If the screen is still showing a PREVIOUS view while the next one loads, show the loader
+   so a click always gives immediate feedback. */
 const loaderHtml=(text='')=>`<div class="loader-wrap"><div class="loader">
     <span class="bar"></span>
     <span class="bar"></span>
     <span class="bar"></span>
   </div>${text?`<div class="loader-text">${esc(text)}</div>`:''}</div>`;
 const loading=main=>{if(main&&!main.children.length)main.innerHTML=loaderHtml('Loading…')};
+const loadingFor=(main,view)=>{if(main&&(main.dataset.painted||'')!==view)main.innerHTML=loaderHtml('Loading…')};
 
-/* cache-first data access for views: instant from cache, silent refresh behind it */
+/* cache-first data access for views: instant from cache, silent refresh behind it.
+   • all keys cached  → paint instantly, refresh stale ones silently
+   • some keys missing → show the loader ONLY if the screen still shows another view
+   • a failing key never kills the view: we fall back to its last good data, and only
+     show the full error panel when the PRIMARY key (first) has no data at all. */
 async function needData(main,view,keys,opt){
   opt=opt||{};
   if(!main||main.dataset.view!==view)return null;
-  const missing=keys.some(k=>{const c=dbCache.get(k);return !c||!c.data});
-  if(missing)loading(main);
-  try{
-    return await Promise.all(keys.map(k=>{
-      const c=dbCache.get(k);
-      if(c&&c.data&&!opt.forceFresh){if(isStale(k,c))revalidate(k).catch(()=>{});return c.data}
-      return revalidate(k,{fresh:!!opt.forceFresh}).then(e=>e.data);
-    }));
-  }catch(e){
-    if(main.isConnected&&main.dataset.view===view)showViewError(main,e);
-    return null;
+  const has=k=>{const c=dbCache.get(k);return !!(c&&c.data)};
+  if(!keys.every(has))loadingFor(main,view);
+  const settled=await Promise.all(keys.map(async k=>{
+    const c=dbCache.get(k);
+    if(c&&c.data&&!opt.forceFresh){if(isStale(k,c))revalidate(k).catch(()=>{});return {ok:true,data:c.data}}
+    try{return {ok:true,data:await revalidate(k,{fresh:!!opt.forceFresh}).then(e=>e.data)}
+    }catch(e){return {ok:false,err:e,data:(dbCache.get(k)||{}).data}}
+  }));
+  if(!main.isConnected||main.dataset.view!==view)return null;    // user moved on already
+  const primary=settled[0];
+  if(!primary.ok&&(primary.data===undefined||primary.data===null)){showViewError(main,primary.err);return null}
+  if(settled.some(x=>!x.ok)){                                     // partial failure → degrade gracefully
+    syncFail();
+    if(primary.ok)return settled.map(x=>x.ok?x.data:(x.data!=null?x.data:(keys.length>1?[]:null)));
   }
+  return settled.map(x=>x.ok?x.data:(x.data!=null?x.data:[]));
 }
 const need=async(main,view,key,opt)=>{const r=await needData(main,view,[key],opt);return r?r[0]:null};
+/* a refresh/render problem must never wipe what the user is looking at:
+   if this view already painted, keep it and toast; only a first paint may show the error panel. */
+function keepOrShowError(main,view,e){
+  if(main.dataset.painted===view&&main.children.length){toast('Could not update: '+(e&&e.message?e.message:'error'));syncFail();return}
+  showViewError(main,e);
+}
 function showViewError(main,e){
   main.innerHTML=`<div class="empty" style="padding:60px 20px"><b style="font-size:16px">Could not load this view</b>
     <div style="font-size:12px;color:#999;margin-top:6px">${esc(e.message||'Network error')}</div>
@@ -140,6 +157,7 @@ function armMain(main){
       const snap=snapView(main);
       desc.set.call(main,html);
       last=html;
+      try{main.dataset.painted=main.dataset.view||''}catch(e){}
       restoreView(main,snap);
     }
   });
@@ -478,7 +496,7 @@ async function renderAdmin(){
     if(view==='profile')return await aAdminProfile(main);
     if(view==='users')return await aUserControl(main);
     if(view==='settings')return aSettings(main);
-  }catch(e){showViewError(main,e)}
+  }catch(e){keepOrShowError(main,view,e)}
 }
 
 /* ---------- ADMIN: DASHBOARD ---------- */
@@ -487,7 +505,8 @@ async function aDashboard(main){
   if(d)renderDashboard(main,d);
 }
 function renderDashboard(main,d){
-  const k=d.kpis;
+  const k=d.kpis||{};
+  const contributions=d.contributions||[],upcoming=d.upcoming||[];
   const kpi=(l,v,c='')=>`<div class="card stat"><div><div class="label">${l}</div><div class="value">${v}</div>${c?`<div class="change">${c}</div>`:''}</div></div>`;
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}, ${esc(state.user.name)}</h1><p>Marketing agent operations, project contribution and payouts.</p></div></div>
@@ -507,7 +526,7 @@ function renderDashboard(main,d){
     <div class="card table-card">
       <div class="table-top"><div><b>Project contribution</b><div style="font-size:11px;color:#999;margin-top:3px">Agent targets and acquired users</div></div></div>
       <div style="overflow:auto"><table class="table"><thead><tr><th>Agent</th><th>Project</th><th>Start</th><th>Deadline</th><th>Target</th><th>Acquired</th><th>Progress</th><th>Commission</th><th>Status</th></tr></thead>
-      <tbody>${d.contributions.length?d.contributions.map(c=>`<tr>
+      <tbody>${contributions.length?contributions.map(c=>`<tr>
         <td><div class="partner"><div class="avatar">${esc(initials(c.partner_name))}</div><div><b>${esc(c.partner_name)}</b><small>#${esc(c.partner_code)}</small></div></div></td>
         <td>${esc(c.project_name)}</td><td>${c.start_date?fmtDate(c.start_date):'—'}</td><td>${c.deadline?fmtDate(c.deadline):'—'}</td><td>${num(c.assigned_target).toLocaleString()}</td><td><b>${num(c.acquired_users).toLocaleString()}</b></td>
         <td style="min-width:130px"><div style="display:flex;justify-content:space-between;font-size:10px"><span>${pct(num(c.acquired_users),num(c.assigned_target))}%</span><span>${num(c.assigned_target).toLocaleString()} target</span></div><div class="progress"><i style="width:${pct(num(c.acquired_users),num(c.assigned_target))}%"></i></div></td>
@@ -516,7 +535,7 @@ function renderDashboard(main,d){
     <div class="card">
       <div class="section-head"><h2>Upcoming payouts</h2><span>Not yet paid</span></div>
       <div class="row" style="display:block">
-        ${d.upcoming.length?d.upcoming.map(p=>`<div class="row" style="border-top:1px solid var(--border)"><div class="left"><div class="mini">${esc(initials(p.partner_name))}</div><div><b>${esc(p.partner_name)}</b><small>${esc(p.project_name)} · ${fmtDate(p.payment_date)}</small></div></div><div class="money"><b>${money(p.amount)}</b><small>${PAY_STATUS[p.status]?.[0]||p.status}</small></div></div>`).join(''):'<div class="empty">Nothing pending. 🎉</div>'}
+        ${upcoming.length?upcoming.map(p=>`<div class="row" style="border-top:1px solid var(--border)"><div class="left"><div class="mini">${esc(initials(p.partner_name))}</div><div><b>${esc(p.partner_name)}</b><small>${esc(p.project_name)} · ${fmtDate(p.payment_date)}</small></div></div><div class="money"><b>${money(p.amount)}</b><small>${PAY_STATUS[p.status]?.[0]||p.status}</small></div></div>`).join(''):'<div class="empty">Nothing pending. 🎉</div>'}
       </div>
     </div>
   </div>`;
@@ -1339,7 +1358,7 @@ async function renderPartner(){
     if(view==='projects')return await pOverview(main,'projects');
     if(view==='payments')return await pOverview(main,'payments');
     if(view==='performance')return await pOverview(main,'performance');
-  }catch(e){showViewError(main,e)}
+  }catch(e){keepOrShowError(main,view,e)}
 }
 async function pProfile(main){
   const r=await needData(main,'profile',['me/profile','me/payment-methods']);
@@ -1419,6 +1438,7 @@ async function pOverview(main,view){
   if(view==='projects')renderPProjects(main,d);else if(view==='payments')renderPPayments(main,d);else renderPPerformance(main,d);
 }
 function renderPProjects(main,d){
+    d=d||{};d.projects=d.projects||[];
     main.innerHTML=`<div class="top"><div class="title"><h1>My projects</h1><p>Projects allocated to your account.</p></div></div>
     <div class="project-grid">${d.projects.length?d.projects.map(x=>`
       <div class="project-card"><div class="detail-head"><div><h3>${esc(x.project?.name||'—')}</h3><p>${esc(x.project?.details||'')}</p></div><span class="pill blue">${catLabel(x.category)}</span></div>
@@ -1431,6 +1451,7 @@ function renderPProjects(main,d){
       </div>`).join(''):'<div class="empty" style="grid-column:1/-1">No projects allocated to you yet.</div>'}</div>`;
 }
 function renderPPayments(main,d){
+    d=d||{};d.stats=d.stats||{};d.payments=d.payments||[];d.withdrawals=d.withdrawals||[];
     main.innerHTML=`<div class="top"><div class="title"><h1>My payments</h1><p>Earnings, payout history and withdrawals.</p></div>
     <div class="actions"><button class="btn dark" id="withdrawBtn">Withdraw</button></div></div>
     <div class="kpi-grid">
@@ -1476,6 +1497,7 @@ async function withdrawModal(balance){
   };
 }
 function renderPPerformance(main,d){
+    d=d||{};d.performance=d.performance||{};d.projects=d.projects||[];
     main.innerHTML=`<div class="top"><div class="title"><h1>My performance</h1><p>Your achievement across all allocated projects.</p></div></div>
     <div class="kpi-grid">
       <div class="card stat"><div><div class="label">Total Allocations</div><div class="value">${d.performance.projects}</div></div></div>
@@ -1613,6 +1635,7 @@ async function pAllocations(main){
   if(d)renderAgentAllocations(main,d);
 }
 function renderAgentAllocations(main,d){
+  d={mine:d&&d.mine||[],team:d&&d.team||[]};
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Allocations</h1><p>Targets the admin assigned to you — and how you assign them to your own team.</p></div>
   <div class="actions"><button class="btn dark" id="addTeamAlloc">+ Assign to team member</button></div></div>
