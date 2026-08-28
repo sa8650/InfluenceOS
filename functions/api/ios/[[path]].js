@@ -15,6 +15,20 @@ async function check(password,stored){let [,i,s,v]=stored.split('$'),iterations=
 function db(env,path,opt={}){return fetch(env.IOS_SUPABASE_URL+'/rest/v1/'+path,{...opt,headers:{apikey:env.IOS_SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.IOS_SUPABASE_SERVICE_ROLE_KEY,Prefer:'return=representation',...(opt.headers||{})}}).then(async r=>{let x=await r.json().catch(()=>null);if(!r.ok)throw Error(x?.message||'Database request failed');return x;});}
 async function body(req){try{return await req.json()}catch{return {}}}
 const num=x=>Number(x)||0;
+/* ---------- ADMIN PERMISSIONS (board users; the primary owner always has full access) ---------- */
+const PERM_MODULES={
+  agents:['show','add','edit','delete'],
+  projects:['show','add','edit','delete'],
+  contribute:['show','edit'],
+  allocations:['show','add','edit','delete'],
+  payments:['show','add','edit','delete'],
+  performance:['show'],
+  vaultium:['show','delete','download','view'],
+  connectx:['show','compose','settings','history'],
+  users:['show','add','edit','delete']
+};
+const FULL_PERMS=Object.fromEntries(Object.entries(PERM_MODULES).map(([m,acts])=>[m,Object.fromEntries(acts.map(a=>[a,true]))]));
+const cleanPerms=p=>{const o={};for(const[m,acts]of Object.entries(PERM_MODULES)){o[m]={};for(const a of acts)o[m][a]=!!(p&&p[m]&&p[m][a]);}return o;};
 const PARTNER_TYPES=['youtuber','facebook','tiktoker','instagram','telegram','marketing_agent','agency'];
 const PARTNER_STATUSES=['disagree','agree','not_response','waiting'];
 const ALLOCATION_STATUSES=['on_target','active','behind','inactive'];
@@ -159,13 +173,17 @@ export async function onRequest(context){
       if(!me.login_access)return fail('Login access is disabled for this agent account.',403);
       currentUser=publicPartner(me);
     }
-    if(path==='auth/session'&&method==='GET')return json({role:s.role,user:currentUser});
+    const P=currentUser&&currentUser.kind==='user'?cleanPerms(currentUser.permissions):FULL_PERMS;
+    const can=(m,a)=>!!(P[m]&&P[m][a]);
+    const denied=()=>fail('Permission denied — your account does not have access to this action.',403);
+    if(path==='auth/session'&&method==='GET')return json({role:s.role,user:currentUser,permissions:currentUser&&currentUser.kind==='user'?{_restricted:true,...P}:null});
 
     if(/^files\/[^/]+$/.test(path)&&method==='GET'){
       const id=path.split('/')[1];
       let [f]=await db(env,`contribution_files?id=eq.${id}&select=*`);
       if(!f)return fail('File not found.',404);
       if(s.role!=='admin'&&s.id!==f.partner_id)return fail('Permission denied.',403);
+      if(s.role==='admin'&&!can('vaultium','view')&&!can('vaultium','download'))return denied();
       if(!env.VAULTIUM&&!env.IOS_PROOF)return fail('File storage is not configured.',500);
       let obj=env.VAULTIUM?await env.VAULTIUM.get(f.r2_key):null;
       if(!obj&&env.IOS_PROOF)obj=await env.IOS_PROOF.get(f.r2_key);
@@ -437,12 +455,14 @@ export async function onRequest(context){
 
 
     if(path==='connectx/settings'&&method==='GET'){
+      if(!can('connectx','settings'))return denied();
       let [cfg]=await db(env,'connectx_settings?id=eq.1&select=*');
       const out={...{id:1,enabled:true,from_name:'InfluenceOS',from_email:'no-reply@doxtox.com',reply_to:null,global_daily_limit:500},...(cfg||{})};
       for(const [k,v] of Object.entries(CX_DEFAULT_TEMPLATES)){if(!out[k+'_template_html'])out[k+'_template_html']=v}
       return json(out);
     }
     if(path==='connectx/settings'&&method==='PATCH'){
+      if(!can('connectx','settings'))return denied();
       let b=await body(request),patch={updated_at:new Date().toISOString()};
       if(b.enabled!==undefined)patch.enabled=!!b.enabled;
       if(b.from_name!==undefined)patch.from_name=String(b.from_name||'InfluenceOS').slice(0,120);
@@ -455,15 +475,18 @@ export async function onRequest(context){
     }
 
     if(path==='connectx/contacts'&&method==='GET'){
+      if(!can('connectx','show'))return denied();
       const type=new URL(request.url).searchParams.get('type')||'agent';
       if(type==='agent')return json((await db(env,'partners?select=id,partner_code,name,email,phone,status,type&order=created_at.desc')).map(x=>({id:x.id,type:'agent',code:x.partner_code,name:x.name,email:x.email,phone:x.phone,status:x.status,subtitle:'#'+x.partner_code+' · '+(x.type||'agent')})));
       if(type==='user')return json((await db(env,'admin_users?status=eq.active&select=id,name,email,phone,status&order=created_at.desc')).map(x=>({id:x.id,type:'user',code:'USER',name:x.name,email:x.email,phone:x.phone,status:x.status,subtitle:'Board user'})));
       return fail('Invalid recipient type. Use agent or user.',400);
     }
     if(path==='connectx/messages'&&method==='GET'){
+      if(!can('connectx','history'))return denied();
       return json(await db(env,'connectx_messages?select=*&order=created_at.desc&limit=300'));
     }
     if(path==='connectx/send'&&method==='POST'){
+      if(!can('connectx','compose'))return denied();
       let b=await body(request),recipientType=['agent','user','manual'].includes(b.recipientType)?b.recipientType:'manual';
       let to=emailList(b.to),cc=emailList(b.cc),bcc=emailList(b.bcc),recipientName=String(b.recipientName||'').slice(0,160),recipientId=b.recipientId||null;
       if(recipientType==='agent'&&recipientId){let [r]=await db(env,`partners?id=eq.${recipientId}&select=id,name,email`);if(!r)return fail('Selected agent was not found.',404);recipientName=r.name;to=to.length?to:[r.email];}
@@ -512,19 +535,23 @@ export async function onRequest(context){
       return json({...publicAdminUser(out),kind:s.kind==='user'?'user':'owner'});
     }
     if(path==='admin/users'&&method==='GET'){
+      if(!can('users','show'))return denied();
       let rows=await db(env,'admin_users?select=*&order=created_at.desc');
       return json(rows.map(publicAdminUser));
     }
     if(path==='admin/users'&&method==='POST'){
+      if(!can('users','add'))return denied();
       let b=await body(request),email=String(b.email||'').trim().toLowerCase();
       if(!b.name||!email||!b.phone||!b.address||!b.password||String(b.password).length<6)return fail('Name, phone, address, email and a 6-character password are required.');
       const status=['active','inactive','pending'].includes(b.status)?b.status:'active';
       let [adminDup,userDup]=await Promise.all([db(env,`admins?email=eq.${encodeURIComponent(email)}&select=id`),db(env,`admin_users?email=eq.${encodeURIComponent(email)}&select=id`)]);
       if(adminDup.length||userDup.length)return fail('An admin/user with this email already exists.',409);
-      const [out]=await db(env,'admin_users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:String(b.address).slice(0,300),password_hash:await hash(String(b.password)),status})});
+      const permissions=currentUser.kind==='user'?FULL_PERMS:cleanPerms(b.permissions||FULL_PERMS);
+      const [out]=await db(env,'admin_users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:String(b.address).slice(0,300),password_hash:await hash(String(b.password)),status,permissions})});
       return json(publicAdminUser(out),201);
     }
     if(path.startsWith('admin/users/')&&(method==='PATCH'||method==='DELETE')){
+      if(!can('users',method==='PATCH'?'edit':'delete'))return denied();
       let id=path.split('/')[2];
       if(method==='DELETE'){await db(env,`admin_users?id=eq.${id}`,{method:'DELETE'});return json({ok:true})}
       let b=await body(request),patch={updated_at:new Date().toISOString()};
@@ -532,6 +559,7 @@ export async function onRequest(context){
       if(b.email!==undefined){let email=String(b.email).trim().toLowerCase();if(!email)return fail('Email cannot be empty.');let [adminDup,userDup]=await Promise.all([db(env,`admins?email=eq.${encodeURIComponent(email)}&select=id`),db(env,`admin_users?email=eq.${encodeURIComponent(email)}&select=id`)]);if(adminDup.length||(userDup.length&&userDup[0].id!==id))return fail('Another admin/user already uses this email.',409);patch.email=email;}
       if(b.status!==undefined){if(!['active','inactive','pending'].includes(b.status))return fail('Invalid user status.');patch.status=b.status;}
       if(b.password){if(String(b.password).length<6)return fail('Password must be at least 6 characters.');patch.password_hash=await hash(String(b.password));}
+      if(b.permissions!==undefined){if(currentUser.kind==='user')return fail('Only the primary administrator can change permissions.',403);patch.permissions=cleanPerms(b.permissions);}
       const [out]=await db(env,`admin_users?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
       return json(publicAdminUser(out));
     }
@@ -567,6 +595,7 @@ export async function onRequest(context){
     }
 
     if(path==='partners'&&method==='GET'){
+      if(!can('agents','show'))return denied();
       let [partners,projects,allocs,withdrawals]=await Promise.all([
         db(env,'partners?select=*&order=created_at.desc'),
         db(env,'projects?select=id,name'),
@@ -585,6 +614,7 @@ export async function onRequest(context){
       }));
     }
     if(path==='partners'&&method==='POST'){
+      if(!can('agents','add'))return denied();
       let b=await body(request),email=String(b.email||'').trim().toLowerCase();
       if(!b.name||!email||!b.phone)return fail('Name, email and phone are required.');
       if(!String(b.password||'')||String(b.password).length<6)return fail('Password must be at least 6 characters.');
@@ -599,6 +629,7 @@ export async function onRequest(context){
       return json(publicPartner(out),201);
     }
     if(path.startsWith('partners/')&&method==='PATCH'){
+      if(!can('agents','edit'))return denied();
       let id=path.split('/')[1],[existing]=await db(env,`partners?id=eq.${id}&select=*`);
       if(!existing)return fail('Agent not found.',404);
       let b=await body(request),patch={updated_at:new Date().toISOString()};
@@ -613,12 +644,14 @@ export async function onRequest(context){
       return json(publicPartner(out));
     }
     if(path.startsWith('partners/')&&method==='DELETE'){
+      if(!can('agents','delete'))return denied();
       let id=path.split('/')[1];
       await db(env,`partners?id=eq.${id}`,{method:'DELETE'});
       return json({ok:true});
     }
 
     if(path==='projects'&&method==='GET'){
+      if(!can('projects','show'))return denied();
       let [projects,allocs]=await Promise.all([
         db(env,'projects?select=*&order=created_at.desc'),
         db(env,'allocations?select=project_id,partner_id,category,assigned_target,acquired_users,commission')]);
@@ -631,6 +664,7 @@ export async function onRequest(context){
       }));
     }
     if(path==='projects'&&method==='POST'){
+      if(!can('projects','add'))return denied();
       let b=await body(request);
       if(!b.name)return fail('Project name is required.');
       if(num(b.budget)<0)return fail('Budget cannot be negative.');
@@ -638,6 +672,7 @@ export async function onRequest(context){
       return json(out,201);
     }
     if(path.startsWith('projects/')&&(method==='PATCH'||method==='DELETE')){
+      if(!can('projects',method==='PATCH'?'edit':'delete'))return denied();
       let id=path.split('/')[1];
       if(method==='DELETE'){await db(env,`projects?id=eq.${id}`,{method:'DELETE'});return json({ok:true})}
       let b=await body(request),patch={updated_at:new Date().toISOString()};
@@ -651,11 +686,13 @@ export async function onRequest(context){
     }
 
     if(path==='allocations'&&method==='GET'){
+      if(!can('allocations','show'))return denied();
       let [allocs,projects,partners]=await Promise.all([db(env,'allocations?select=*&order=created_at.desc'),db(env,'projects?select=id,name,start_date,deadline'),db(env,'partners?select=id,name,partner_code')]);
       const pm=Object.fromEntries(projects.map(x=>[x.id,x])),sm=Object.fromEntries(partners.map(x=>[x.id,x]));
       return json(allocs.map(a=>allocToRow(a,pm,sm)));
     }
     if(path==='allocations'&&method==='POST'){
+      if(!can('allocations','add'))return denied();
       let b=await body(request);
       if(!b.project_id||!b.partner_id)return fail('Project and agent are required.');
       if(!ALLOCATION_STATUSES.includes(b.status))return fail('Invalid allocation status.');
@@ -671,6 +708,7 @@ export async function onRequest(context){
       return json(out,201);
     }
     if(path.startsWith('allocations/')&&(method==='PATCH'||method==='DELETE')){
+      if(!can('allocations',method==='PATCH'?'edit':'delete'))return denied();
       let id=path.split('/')[1];
       if(method==='DELETE'){await db(env,`allocations?id=eq.${id}`,{method:'DELETE'});return json({ok:true})}
       let b=await body(request),patch={updated_at:new Date().toISOString()};
@@ -685,11 +723,13 @@ export async function onRequest(context){
     }
 
     if(path==='payments'&&method==='GET'){
+      if(!can('payments','show'))return denied();
       let [pays,projects,partners,allocs]=await Promise.all([db(env,'payments?select=*&order=payment_date.desc,created_at.desc&limit=1000'),db(env,'projects?select=id,name,start_date,deadline'),db(env,'partners?select=id,name,partner_code'),db(env,'allocations?select=project_id,partner_id,start_date,deadline')]);
       const pm=Object.fromEntries(projects.map(x=>[x.id,x])),sm=Object.fromEntries(partners.map(x=>[x.id,x]));
       return json(pays.map(p=>{const ar=allocs.find(a=>a.project_id===p.project_id&&a.partner_id===p.partner_id);return {...payToRow(p,pm,sm),start_date:ar?.start_date||null,deadline:ar?.deadline||null}}));
     }
     if(path==='payments'&&method==='POST'){
+      if(!can('payments','add'))return denied();
       let b=await body(request);
       const allocationId=b.allocation_id||b.project_id;
       if(!allocationId||!b.partner_id)return fail('Project and agent are required.');
@@ -704,6 +744,7 @@ export async function onRequest(context){
       return json(out,201);
     }
     if(path.startsWith('payments/')&&(method==='PATCH'||method==='DELETE')){
+      if(!can('payments',method==='PATCH'?'edit':'delete'))return denied();
       let id=path.split('/')[1];
       let [existing]=await db(env,`payments?id=eq.${id}&select=*`);
       if(!existing)return fail('Payment not found.',404);
@@ -731,6 +772,7 @@ export async function onRequest(context){
     }
 
     if(path==='performance'&&method==='GET'){
+      if(!can('performance','show'))return denied();
       let [allocs,partners,projects]=await Promise.all([
         db(env,'allocations?select=*&order=created_at.asc'),
         db(env,'partners?select=id,name,partner_code,type'),
@@ -750,6 +792,7 @@ export async function onRequest(context){
       return json(rows.map(t=>({...t,partner_name:sm[t.partner_id]?.name||'—',partner_code:sm[t.partner_id]?.partner_code||'',member_name:mm[t.team_member_id]?.name||'—',member_code:mm[t.team_member_id]?.code||'',project_name:pm[t.project_id]||'—'})));
     }
     if(path==='contributions'&&method==='GET'){
+      if(!can('contribute','show'))return denied();
       let [rows,partners,projects,allocs,files]=await Promise.all([
         db(env,'contributions?select=*&order=created_at.desc&limit=1000'),
         db(env,'partners?select=id,name,partner_code'),
@@ -760,6 +803,7 @@ export async function onRequest(context){
       return json(rows.map(c=>({...c,partner_name:sm[c.partner_id]?.name||'—',partner_code:sm[c.partner_id]?.partner_code||'',project_name:pm[c.project_id]||'—',category:am[c.allocation_id]?.category||'',start_date:am[c.allocation_id]?.start_date||null,deadline:am[c.allocation_id]?.deadline||null,files:files.filter(f=>f.contribution_id===c.id)})));
     }
     if(path.startsWith('contributions/')&&method==='PATCH'){
+      if(!can('contribute','edit'))return denied();
       const id=path.split('/')[1];
       let [c]=await db(env,`contributions?id=eq.${id}&select=*`);
       if(!c)return fail('Contribution request not found.',404);
@@ -786,6 +830,7 @@ export async function onRequest(context){
     }
 
     if(path==='vaultium'&&method==='GET'){
+      if(!can('vaultium','show'))return denied();
       let [files,contributions,partners,projects,allocs]=await Promise.all([
         db(env,'contribution_files?select=*&order=created_at.desc&limit=2000'),
         db(env,'contributions?select=id,code,project_id,partner_id,created_at,allocation_id'),
@@ -799,6 +844,7 @@ export async function onRequest(context){
       }));
     }
     if(/^files\/[^/]+$/.test(path)&&method==='DELETE'){
+      if(!can('vaultium','delete'))return denied();
       let [f]=await db(env,`contribution_files?id=eq.${path.split('/')[1]}&select=*`);
       if(!f)return fail('File not found.',404);
       if(env.VAULTIUM)await env.VAULTIUM.delete(f.r2_key).catch(()=>{});
@@ -883,6 +929,7 @@ export async function onRequest(context){
     }
 
     if(path==='withdrawals'&&method==='GET'){
+      if(!can('payments','show'))return denied();
       let [rows,partners]=await Promise.all([
         db(env,'withdrawals?select=*&order=created_at.desc&limit=1000'),
         db(env,'partners?select=id,name,partner_code')]);
@@ -890,6 +937,7 @@ export async function onRequest(context){
       return json(rows.map(w=>({...w,partner_name:sm[w.partner_id]?.name||'—',partner_code:sm[w.partner_id]?.partner_code||''})));
     }
     if(path.startsWith('withdrawals/')&&method==='PATCH'){
+      if(!can('payments','edit'))return denied();
       let id=path.split('/')[1];
       let [w]=await db(env,`withdrawals?id=eq.${id}&select=*`);
       if(!w)return fail('Withdrawal request not found.',404);
