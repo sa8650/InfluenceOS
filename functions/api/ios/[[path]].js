@@ -49,8 +49,7 @@ const renderCxTemplate=(tpl,data={})=>String(tpl||'').replace(/{{\s*([^}]+?)\s*}
 
 async function partnerStats(env,ids){
   const want=ids&&ids.length?ids:null;
-  const f=want?'&partner_id=in.('+want.join(',')+')':'';
-  let [allocs,pays]=await Promise.all([db(env,'allocations?select=partner_id,project_id,assigned_target,acquired_users,commission'+f),db(env,'payments?select=partner_id,amount,status'+f)]);
+  let [allocs,pays]=await Promise.all([db(env,'allocations?select=partner_id,project_id,assigned_target,acquired_users,commission'),db(env,'payments?select=partner_id,amount,status')]);
   const map={};
   const slot=id=>map[id]??={projects:0,acquired:0,income:0,paid:0};
   for(const a of allocs){if(want&&!want.includes(a.partner_id))continue;const s=slot(a.partner_id);s.projects++;s.acquired+=num(a.acquired_users);s.income+=num(a.commission);}
@@ -72,7 +71,7 @@ const PROOF_TYPES=['image/png','image/jpeg','image/webp','image/gif','applicatio
 const PROOF_EXT=['png','jpg','jpeg','webp','gif','pdf','txt','doc','docx','xls','xlsx'];
 const acctStr=a=>(Array.isArray(a)&&a.length?a.map(x=>`${x.label||'Account'}: ${x.url||''}`).join(' | '):'(none)');
 
-async function handle(context){
+export async function onRequest(context){
   const {request,env,params}=context, path=(params.path||[]).join('/'), method=request.method;
   try{
     {let missing=['IOS_SUPABASE_URL','IOS_SUPABASE_SERVICE_ROLE_KEY','IOS_SESSION_SECRET'].filter(k=>!env[k]);if(missing.length)return fail('InfluenceOS server configuration is incomplete: missing '+missing.join(', ')+'.',500);}
@@ -538,24 +537,6 @@ async function handle(context){
     }
 
     if(path==='overview'&&method==='GET'){
-      /* FAST PATH — all KPIs computed inside Postgres in ONE roundtrip (ios_overview RPC).
-         Falls back silently to the legacy multi-table pull if the RPC is not installed yet. */
-      try{
-        const k=await db(env,'rpc/ios_overview',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
-        if(k&&k.kpis&&k.kpis.totalPartners!==undefined){
-          const [partners,projects,allocs]=await Promise.all([
-            db(env,'partners?select=id,name,partner_code&order=created_at.desc&limit=500'),
-            db(env,'projects?select=id,name&order=created_at.desc&limit=500'),
-            db(env,'allocations?select=*&order=created_at.desc&limit=300')]);
-          const projectMap=Object.fromEntries(projects.map(x=>[x.id,x])),partnerMap=Object.fromEntries(partners.map(x=>[x.id,x]));
-          return json({
-            kpis:k.kpis,
-            contributions:allocs.map(a=>allocToRow(a,projectMap,partnerMap)),
-            projects:k.projects||[],
-            upcoming:(k.upcoming||[]).map(p=>({...p,partner_code:(partnerMap[p.partner_id]||{}).partner_code||''}))
-          });
-        }
-      }catch(e){}
       let [partners,projects,allocs,pays]=await Promise.all([
         db(env,'partners?select=id,name,partner_code,status,type&order=created_at.desc'),
         db(env,'projects?select=*&order=created_at.desc'),
@@ -586,11 +567,6 @@ async function handle(context){
     }
 
     if(path==='partners'&&method==='GET'){
-      /* FAST PATH — per-agent financials computed inside Postgres in ONE roundtrip (ios_partner_directory RPC). */
-      try{
-        const rows=await db(env,'rpc/ios_partner_directory',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
-        if(Array.isArray(rows)&&(!rows.length||rows[0].partner_code!==undefined))return json(rows);
-      }catch(e){}
       let [partners,projects,allocs,withdrawals]=await Promise.all([
         db(env,'partners?select=*&order=created_at.desc'),
         db(env,'projects?select=id,name'),
@@ -935,54 +911,4 @@ async function handle(context){
 
     return fail('Not found.',404);
   }catch(e){return fail(e.message||'Unexpected server error.',500)}
-}
-
-/* ═══════════ EDGE SWR CACHE (Cloudflare Pages Function, per-isolate) ═══════════
-   The dashboard now polls silently in the background. To keep Supabase load low:
-   • GET responses are cached at the edge for a short FRESH window (10s)
-   • after that we still answer INSTANTLY from cache (≤120s) and refresh in background
-   • mutations purge the acting user's entries; "x-fresh: 1" (sent after every mutation)
-     bypasses the cache so you always see your own change immediately.
-   Cache is keyed by session user + path, so data never leaks between accounts. */
-const EDGE_FRESH_MS=10000, EDGE_STALE_MS=120000, EDGE_MAX_ENTRIES=120, EDGE_MAX_BYTES=1500000;
-const edgeCache=new Map();
-const JH={'content-type':'application/json','cache-control':'no-store'};
-const EDGE_SKIP=p=>p.startsWith('auth/')||p.startsWith('files/')||p==='';
-function edgeKey(s,method,path,url){return (s?s.role+':'+(s.id||''):'anon')+'|'+method+'|'+path+'|'+url.search}
-function edgeGet(k){const e=edgeCache.get(k);if(!e)return null;if(Date.now()-e.at>EDGE_STALE_MS){edgeCache.delete(k);return null}return e}
-function edgePut(k,body){
-  if(typeof body!=='string'||body.length>EDGE_MAX_BYTES)return;
-  if(edgeCache.size>=EDGE_MAX_ENTRIES)edgeCache.delete(edgeCache.keys().next().value);
-  edgeCache.set(k,{at:Date.now(),body});
-}
-function edgePurge(prefix){for(const k of edgeCache.keys())if(k.startsWith(prefix))edgeCache.delete(k)}
-
-export async function onRequest(context){
-  const {request,env,params}=context, path=(params.path||[]).join('/'), method=request.method;
-  const url=new URL(request.url);
-
-  // never cache / never skip auth for non-GET: run and purge this user's cache on success
-  if(method!=='GET'){
-    const res=await handle(context);
-    try{const s=await session(request,env.IOS_SESSION_SECRET);if(s&&res.ok)edgePurge((s.role+':'+(s.id||''))+'|');}catch(e){}
-    return res;
-  }
-  if(EDGE_SKIP(path))return handle(context);
-
-  let s=null;try{s=await session(request,env.IOS_SESSION_SECRET)}catch(e){}
-  const k=edgeKey(s,method,path,url);
-  const forceFresh=request.headers.get('x-fresh')==='1'||url.searchParams.has('fresh');
-  const e=forceFresh?null:edgeGet(k);
-
-  if(e){
-    if(Date.now()-e.at<=EDGE_FRESH_MS)return new Response(e.body,{status:200,headers:JH});
-    // stale → answer instantly, refresh the cache behind the request
-    try{context.waitUntil(handle(context).then(async r=>{if(r.status===200)edgePut(k,await r.text())}).catch(()=>{}))}catch(err){}
-    return new Response(e.body,{status:200,headers:{...JH,'x-edge':'stale'}});
-  }
-  const res=await handle(context);
-  if(res.status===200){
-    try{const t=await res.text();edgePut(k,t);return new Response(t,{status:200,headers:JH})}catch(err){return res}
-  }
-  return res;
 }
