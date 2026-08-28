@@ -508,3 +508,16 @@ body.dashboard-mode .chat .loader-wrap{min-height:120px;background:transparent;b
 .permchk{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#475569;cursor:pointer;white-space:nowrap}
 .permchk input{width:14px;height:14px;accent-color:#111;margin:0;cursor:pointer}
 @media(max-width:600px){.permrow{flex-direction:column;align-items:flex-start}.permacts{justify-content:flex-start}}
+
+/* ═══════════ NOTIFICATIONS ═══════════ */
+.notifbtn{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:9px 12px;margin:6px 0 10px;border:1px solid var(--border);border-radius:10px;background:#fff;color:#334155;font-weight:700;font-size:13px;cursor:pointer}
+.notifbtn:hover{background:#f5f7fb}
+.notifbtn .navbadge{position:absolute;top:-6px;right:10px}
+.notifitem{padding:11px 12px;border:1px solid #eef1f5;border-radius:10px;margin-bottom:8px;background:#fff}
+.notifitem.unread{background:#f4f8ff;border-color:#dbe7ff}
+.notifitem b{font-size:13px;color:#1e293b}
+.notifitem p{margin:4px 0 0;font-size:12px;color:#64748b;line-height:1.5}
+.notifitem time{display:block;margin-top:5px;font-size:10.5px;color:#a3aec0}
+.notifrow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.notifdot{width:9px;height:9px;border-radius:50%;background:#2563eb;flex:0 0 auto}
+#notifList{max-height:52vh;overflow:auto;margin:10px 0}
