@@ -21,6 +21,7 @@ const loaderHtml=(text='')=>`<div class="loader-wrap"><div class="loader">
   </div>${text?`<div class="loader-text">${esc(text)}</div>`:''}</div>`;
 const loading=main=>{main.innerHTML=loaderHtml('Loading…')};
 const loadError=main=>{main.innerHTML=`<div class="empty" style="padding:60px 20px"><b>Could not load this page</b><div id="errDetail" style="font-size:12px;color:#999;margin-top:6px"></div></div>`};
+const wire=(id,fn)=>{const el=document.getElementById(id);if(el)el.onclick=fn;return el};
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2});
 const num=v=>Number(v)||0;
@@ -402,7 +403,7 @@ function renderPartnersView(main,partners){
     <td>${pill(PARTNER_STATUS,p.status)}</td>
     <td class="actions-cell"><button class="btn small" data-view="${p.id}">View</button>${can('agents','edit')?`<button class="btn small" data-edit="${p.id}">Edit</button>`:''}${can('agents','delete')?`<button class="btn small danger" data-del="${p.id}">×</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="11" class="empty">No partners found.</td></tr>'}</tbody></table></div></div>`;
-  $('#addPartner').onclick=()=>partnerModal(null,partners);
+  wire('addPartner',()=>partnerModal(null,partners));
   $('#pq').oninput=e=>{pFilter.q=e.target.value;renderPartnersView(main,partners)};
   $('#ptype').onchange=e=>{pFilter.type=e.target.value;renderPartnersView(main,partners)};
   $('#pstatus').onchange=e=>{pFilter.status=e.target.value;renderPartnersView(main,partners)};
@@ -480,7 +481,7 @@ function renderProjectsView(main,projects){
       <div class="meta"><span>${pct(num(p.acquired_users),num(p.target_users))}% achieved</span><span>${p.partner_count} agents</span></div>
       <div style="margin-top:12px;display:flex;gap:6px">${can('projects','edit')?`<button class="btn small" data-edit="${p.id}">Edit</button>`:''}${can('projects','delete')?`<button class="btn small danger" data-del="${p.id}">×</button>`:''}</div>
     </div>`).join(''):'<div class="empty" style="grid-column:1/-1">No projects yet.</div>'}</div>`;
-  $('#addProject').onclick=()=>projectModal(null);
+  wire('addProject',()=>projectModal(null));
   main.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>projectModal(projects.find(x=>x.id===b.dataset.edit)));
   main.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this project and its allocations/payments?'))return;try{await mutate('projects/'+b.dataset.del,{method:'DELETE'});toast('Project deleted.');renderAdmin()}catch(e){toast(e.message)}});
 }
@@ -548,7 +549,7 @@ function renderPaymentsView(main,payments,partners,allocations,withdrawals){
       <td class="actions-cell">${w.status==='pending'&&can('payments','edit')?`<button class="btn small" data-wacc="${w.id}">Accept</button><button class="btn small danger" data-wrej="${w.id}">Reject</button>`:''}</td>
     </tr>`).join(''):'<tr><td colspan="11" class="empty">No withdrawal requests.</td></tr>'}</tbody></table></div></div>
   </div>`;
-  $('#addPay').onclick=()=>paymentModal(partners,allocations,payments);
+  wire('addPay',()=>paymentModal(partners,allocations,payments));
   $('#payq').oninput=e=>{payFilterQ=e.target.value;renderPaymentsView(main,payments,partners,allocations,withdrawals)};
   main.querySelectorAll('[data-paid]').forEach(b=>b.onclick=async()=>{try{await mutate('payments/'+b.dataset.paid,{method:'PATCH',body:JSON.stringify({status:'paid'})});toast('Payment marked as paid — commission updated.');renderAdmin()}catch(e){toast(e.message)}});
   main.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this payment? Its commission (if paid) will be removed too.'))return;try{await mutate('payments/'+b.dataset.del,{method:'DELETE'});toast('Payment deleted.');renderAdmin()}catch(e){toast(e.message)}});
@@ -684,7 +685,7 @@ function renderAllocationsView(main,allocs,projects,partners,teamAllocs=[]){
     <td><b>${num(t.acquired_users).toLocaleString()}</b></td>
     <td>${pill(ALLOC_STATUS,t.status)}</td>
   </tr>`).join(''):'<tr><td colspan="7" class="empty">No team allocations yet.</td></tr>'}</tbody></table></div></div>`;
-  $('#addAlloc').onclick=()=>allocationModal(null,projects,agree);
+  wire('addAlloc',()=>allocationModal(null,projects,agree));
   $('#aq').oninput=e=>{aFilterQ=e.target.value;renderAllocationsView(main,allocs,projects,partners)};
   main.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>allocationModal(allocs.find(x=>x.id===b.dataset.edit),projects,agree));
   main.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this allocation?'))return;try{await mutate('allocations/'+b.dataset.del,{method:'DELETE'});toast('Allocation deleted.');renderAdmin()}catch(e){toast(e.message)}});
@@ -997,8 +998,8 @@ function wireConnectXCompose(main){
   wireCxPick();
   if($('#cxClearAttach'))$('#cxClearAttach').onclick=()=>{cxAttachment=null;const box=$('#cxAttachBox');box.style.display='none';box.innerHTML=''};
   $('#cxAttachType').onchange=e=>{if(e.target.value){connectXAttachmentModal(e.target.value);e.target.value=''}};
-  $('#cxSend').onclick=async()=>{
-    const btn=$('#cxSend');btn.disabled=true;btn.textContent='Sending…';
+  const cxB=$('#cxSend');if(cxB)cxB.onclick=async()=>{
+    const btn=cxB;btn.disabled=true;btn.textContent='Sending…';
     try{await mutate('connectx/send',{method:'POST',body:JSON.stringify({recipientType:cxRecipientType,recipientId:cxSelected,to:$('#cxTo').value,cc:$('#cxCc')?.value||'',bcc:$('#cxBcc')?.value||'',subject:$('#cxSubject').value,body:$('#cxBody').value,attachment:cxAttachment,recipientName:cxContacts.find(x=>x.id===cxSelected)?.name||''})});toast('Email sent through ConnectX.');cxView='history';await aConnectX(main)}
     catch(e){toast(e.message);btn.disabled=false;btn.textContent='Send email'}
   };
@@ -1092,7 +1093,7 @@ function renderUserControl(main,users){
     <td>${pill(USER_STATUS,u.status)}</td><td>${fmtDate(u.created_at)}</td>
     <td class="actions-cell">${u.status==='pending'&&can('users','edit')?`<button class="btn small" data-approve="${u.id}">Confirm</button>`:''}${can('users','edit')?`<button class="btn small" data-edit-user="${u.id}">Edit</button>`:''}${can('users','delete')?`<button class="btn small danger" data-del-user="${u.id}">×</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="7" class="empty">No users yet.</td></tr>'}</tbody></table></div></div>`;
-  $('#addUser').onclick=()=>userControlModal(null);
+  wire('addUser',()=>userControlModal(null));
   main.querySelectorAll('[data-approve]').forEach(b=>b.onclick=async()=>{try{await mutate('admin/users/'+b.dataset.approve,{method:'PATCH',body:JSON.stringify({status:'active'})});toast('User confirmed.');renderAdmin()}catch(e){toast(e.message)}});
   main.querySelectorAll('[data-edit-user]').forEach(b=>b.onclick=()=>userControlModal(users.find(u=>u.id===b.dataset.editUser)));
   main.querySelectorAll('[data-del-user]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this user account?'))return;try{await mutate('admin/users/'+b.dataset.delUser,{method:'DELETE'});toast('User deleted.');renderAdmin()}catch(e){toast(e.message)}});
@@ -1194,8 +1195,8 @@ function renderPProfile(main,me,payMethods=[]){
     });
   };
   paintPayMethods(payMethods);
-  $('#payMethodsBtn').onclick=()=>paymentMethodModal(null,paintPayMethods);
-  $('#editProfile').onclick=()=>{
+  wire('payMethodsBtn',()=>paymentMethodModal(null,paintPayMethods));
+  const epBtn=$('#editProfile');if(epBtn)epBtn.onclick=()=>{
     const accounts=(me.accounts&&me.accounts.length?me.accounts:[{label:'',url:''}]);
     const ov=modal(`
     <h2>Edit profile</h2>
@@ -1267,7 +1268,7 @@ function renderPPayments(main,d){
       <td>${pill(WD_STATUS,w.status)}${w.status==='rejected'&&w.reject_reason?`<small class="muted" style="display:block;margin-top:3px">${esc(w.reject_reason)}</small>`:''}</td>
     </tr>`).join(''):'<tr><td colspan="8" class="empty">No withdrawals yet.</td></tr>'}</tbody></table></div></div>
     </div>`;
-    $('#withdrawBtn').onclick=()=>withdrawModal(d.stats.balance);
+    wire('withdrawBtn',()=>withdrawModal(d.stats.balance));
 }
 async function withdrawModal(balance){
   let methods=[];
@@ -1328,7 +1329,7 @@ function renderTeamView(main,rows){
     <td>${pill(TEAM_STATUS,m.status)}</td>
     <td class="actions-cell"><button class="btn small" data-tm-edit="${m.id}">Edit</button><button class="btn small danger" data-tm-del="${m.id}">×</button></td>
   </tr>`).join(''):'<tr><td colspan="9" class="empty">No team members yet.</td></tr>'}</tbody></table></div></div>`;
-  $('#addMember').onclick=()=>teamModal(null);
+  wire('addMember',()=>teamModal(null));
   $('#teamQ').oninput=e=>{teamQ=e.target.value;renderTeamView(main,rows)};
   main.querySelectorAll('[data-tm-edit]').forEach(b=>b.onclick=()=>teamModal(rows.find(x=>x.id===b.dataset.tmEdit)));
   main.querySelectorAll('[data-tm-del]').forEach(b=>b.onclick=async()=>{
@@ -1459,7 +1460,7 @@ function renderAgentAllocations(main,d){
     <td>${pill(ALLOC_STATUS,t.status)}</td>
     <td class="actions-cell"><button class="btn small" data-ta-edit="${t.id}">Edit</button><button class="btn small danger" data-ta-del="${t.id}">×</button></td>
   </tr>`).join(''):'<tr><td colspan="8" class="empty">No team allocations yet. Click “+ Assign to team member”.</td></tr>'}</tbody></table></div></div>`;
-  $('#addTeamAlloc').onclick=()=>teamAllocModal(null,d);
+  wire('addTeamAlloc',()=>teamAllocModal(null,d));
   main.querySelectorAll('[data-ta-edit]').forEach(b=>b.onclick=()=>teamAllocModal(d.team.find(x=>x.id===b.dataset.taEdit),d));
   main.querySelectorAll('[data-ta-del]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Delete this team allocation?'))return;
@@ -1528,7 +1529,7 @@ function renderPContribute(main,rows,overview){
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.review_note||'')}">${c.reviewed_at?esc(c.review_note||'Reviewed'):'Waiting for review'}</td>
   </tr>`).join(''):'<tr><td colspan="10" class="empty">No contribution requests yet. Click “+ Add contribution”.</td></tr>'}</tbody></table></div></div>`;
   main.querySelectorAll('[data-files]').forEach(b=>b.onclick=()=>filesModal(JSON.parse(b.dataset.files)));
-  $('#addContrib').onclick=()=>contributeModal(overview);
+  wire('addContrib',()=>contributeModal(overview));
 }
 function contributeModal(overview){
   const projects=(overview?.projects||[]).filter(x=>x.project);
