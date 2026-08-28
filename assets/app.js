@@ -2,207 +2,25 @@
 const $=s=>document.querySelector(s), app=$('#app');
 let state=JSON.parse(localStorage.getItem('ios.session')||'null');
 
-/* ═══════════ SILENT DATA LAYER — stale-while-revalidate ═══════════
-   • api() returns cached data INSTANTLY (no spinner on navigation or refresh)
-   • data revalidates in the BACKGROUND every ~15s (one key at a time, staggered)
-   • a view re-renders ONLY when its data actually changed — same UI, values just update
-   • identical renders are skipped entirely (no flicker, no scroll jump, no focus loss)
-   • a transient error never blanks the screen: old data stays, a tiny chip says "Reconnecting…" */
-const REFRESH_MS=15000;
-const KEY_INTERVAL=k=>(k==='helpdesk'||k.startsWith('helpdesk/'))?12000:REFRESH_MS;
-const dbCache=new Map();               // key -> {data,sig,at,inflight,jit}
-const subs=new Map();                  // key -> Set<fn(data)>  focus-safe targeted updates
-let viewPaint=null;                    // {keys:[], fn} active view repaint
-let pendingRepaint=false;
-
-const sig=x=>{try{return JSON.stringify(x)}catch{return null}};
-const isStale=(k,c)=>Date.now()-c.at>=KEY_INTERVAL(k)+(c.jit||0);
-
-function rawFetch(path,opt={}){
-  const method=(opt.method||'GET').toUpperCase();
-  return fetch('/api/ios/'+path,{cache:'no-store',method,
-    headers:{'content-type':'application/json','cache-control':'no-store',
-      ...(state?.token?{authorization:'Bearer '+state.token}:{}),
-      ...(opt.fresh?{'x-fresh':'1'}:{})},
-    ...(method==='GET'?{}:{body:opt.body})})
-  .then(async r=>{let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Request failed');return x});
-}
-function revalidate(key,opt={}){
-  let c=dbCache.get(key);
-  if(c?.inflight)return c.inflight;
-  const p=(async()=>{
-    try{
-      const data=await rawFetch(key,opt);
-      const s=sig(data),prev=dbCache.get(key),changed=!prev||prev.sig!==s;
-      dbCache.set(key,{data,sig:s,at:Date.now(),inflight:null,jit:prev?prev.jit:Math.floor(Math.random()*4000)});
-      if(changed)notify(key,data);
-      syncOk();
-      return dbCache.get(key);
-    }catch(e){
-      const prev=dbCache.get(key);
-      if(prev){prev.inflight=null;prev.at=Date.now()-KEY_INTERVAL(key)+5000;if(prev.data)syncFail()}
-      throw e;
-    }
-  })();
-  if(c)c.inflight=p;else dbCache.set(key,{data:null,sig:null,at:0,inflight:p,jit:Math.floor(Math.random()*4000)});
-  return p;
-}
-function notify(key,data){
-  const s=subs.get(key);if(s)s.forEach(f=>{try{f(data)}catch(e){}});
-  if(viewPaint&&viewPaint.keys.includes(key))queueRepaint();
-}
-function onKey(key,fn){let s=subs.get(key);if(!s){s=new Set();subs.set(key,s)}s.add(fn);return()=>s.delete(fn)}
-
-/* the loader only ever shows on FIRST entry to a view (never during background refresh).
-   If the screen is still showing a PREVIOUS view while the next one loads, show the loader
-   so a click always gives immediate feedback. */
+/* ── Data pulling: the EMS method (github.com/sa8650/EMS) — plain fetch per view.
+      No client cache, no cache-busters, no polling timers. A view loads once when
+      you open it ("Loading…"), and re-fetches only after you change something. ── */
+const api=async(path,opt={})=>{
+  let r=await fetch('/api/ios/'+path,{...opt,headers:{'content-type':'application/json',...(state?.token?{authorization:'Bearer '+state.token}:{}),...(opt.headers||{})}});
+  let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Request failed');return x;
+};
+const upload=async(path,formData)=>{
+  let r=await fetch('/api/ios/'+path,{method:'POST',headers:{...(state?.token?{authorization:'Bearer '+state.token}:{})},body:formData});
+  let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Upload failed');return x;
+};
+const mutate=async(path,opt={})=>api(path,opt);
 const loaderHtml=(text='')=>`<div class="loader-wrap"><div class="loader">
     <span class="bar"></span>
     <span class="bar"></span>
     <span class="bar"></span>
   </div>${text?`<div class="loader-text">${esc(text)}</div>`:''}</div>`;
-const loading=main=>{if(main&&!main.children.length)main.innerHTML=loaderHtml('Loading…')};
-const loadingFor=(main,view)=>{if(main&&(main.dataset.painted||'')!==view)main.innerHTML=loaderHtml('Loading…')};
-
-/* cache-first data access for views: instant from cache, silent refresh behind it.
-   • all keys cached  → paint instantly, refresh stale ones silently
-   • some keys missing → show the loader ONLY if the screen still shows another view
-   • a failing key never kills the view: we fall back to its last good data, and only
-     show the full error panel when the PRIMARY key (first) has no data at all. */
-async function needData(main,view,keys,opt){
-  opt=opt||{};
-  if(!main||main.dataset.view!==view)return null;
-  const has=k=>{const c=dbCache.get(k);return !!(c&&c.data)};
-  if(!keys.every(has))loadingFor(main,view);
-  const settled=await Promise.all(keys.map(async k=>{
-    const c=dbCache.get(k);
-    if(c&&c.data&&!opt.forceFresh){if(isStale(k,c))revalidate(k).catch(()=>{});return {ok:true,data:c.data}}
-    try{return {ok:true,data:await revalidate(k,{fresh:!!opt.forceFresh}).then(e=>e.data)}
-    }catch(e){return {ok:false,err:e,data:(dbCache.get(k)||{}).data}}
-  }));
-  if(!main.isConnected||main.dataset.view!==view)return null;    // user moved on already
-  const primary=settled[0];
-  if(!primary.ok&&(primary.data===undefined||primary.data===null)){showViewError(main,primary.err);return null}
-  if(settled.some(x=>!x.ok)){                                     // partial failure → degrade gracefully
-    syncFail();
-    if(primary.ok)return settled.map(x=>x.ok?x.data:(x.data!=null?x.data:(keys.length>1?[]:null)));
-  }
-  return settled.map(x=>x.ok?x.data:(x.data!=null?x.data:[]));
-}
-const need=async(main,view,key,opt)=>{const r=await needData(main,view,[key],opt);return r?r[0]:null};
-/* a refresh/render problem must never wipe what the user is looking at:
-   if this view already painted, keep it and toast; only a first paint may show the error panel. */
-function keepOrShowError(main,view,e){
-  if(main.dataset.painted===view&&main.children.length){toast('Could not update: '+(e&&e.message?e.message:'error'));syncFail();return}
-  showViewError(main,e);
-}
-function showViewError(main,e){
-  main.innerHTML=`<div class="empty" style="padding:60px 20px"><b style="font-size:16px">Could not load this view</b>
-    <div style="font-size:12px;color:#999;margin-top:6px">${esc(e.message||'Network error')}</div>
-    <div style="margin-top:16px"><button class="btn dark" id="viewRetry">↻ Retry</button></div></div>`;
-  $('#viewRetry').onclick=()=>{main.innerHTML=loaderHtml('Loading…');(state.role==='admin'?renderAdmin():renderPartner()).catch(()=>{})};
-}
-
-/* guarded repaint: while the user types in the view or a modal is open we hold updates,
-   then flush them the moment they are done — the UI is never disturbed. */
-let repaintScheduled=false;
-function queueRepaint(){
-  if(repaintScheduled)return;repaintScheduled=true;
-  requestAnimationFrame(()=>{repaintScheduled=false;flushRepaint()});
-}
-function flushRepaint(){
-  if(!viewPaint)return;
-  const main=$('#main');if(!main)return;
-  const ae=document.activeElement;
-  if(document.querySelector('.overlay')||(ae&&main.contains(ae)&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))){pendingRepaint=true;return}
-  pendingRepaint=false;
-  Promise.resolve(viewPaint.fn()).catch(()=>{});
-}
-document.addEventListener('focusout',()=>setTimeout(()=>{if(pendingRepaint)flushRepaint()},120));
-new MutationObserver(()=>{if(pendingRepaint&&!document.querySelector('.overlay'))flushRepaint()}).observe(document.body,{childList:true});
-
-/* background ticker — pulls ONE stale key at a time so requests never burst or freeze the screen */
-setInterval(()=>{
-  if(document.hidden||!viewPaint)return;
-  const now=Date.now(),keys=[...new Set(viewPaint.keys.concat(['helpdesk']))];
-  for(const k of keys){
-    const c=dbCache.get(k);
-    if(c&&c.data&&!c.inflight&&now-c.at>=KEY_INTERVAL(k)+(c.jit||0)){revalidate(k).catch(()=>{});break}
-  }
-},3000);
-document.addEventListener('visibilitychange',()=>{
-  if(document.hidden||!viewPaint)return;
-  viewPaint.keys.forEach(k=>{const c=dbCache.get(k);if(c&&c.data&&!c.inflight&&Date.now()-c.at>5000)revalidate(k).catch(()=>{})});
-  const h=dbCache.get('helpdesk');if(h&&h.data&&!h.inflight&&Date.now()-h.at>5000)revalidate('helpdesk').catch(()=>{});
-});
-window.addEventListener('online',()=>{if(viewPaint)viewPaint.keys.forEach(k=>revalidate(k).catch(()=>{}));revalidate('helpdesk').catch(()=>{})});
-
-/* tiny non-blocking connection chip — never blocks or blanks the UI */
-function syncFail(){let c=$('#syncchip');if(!c){c=document.createElement('div');c.id='syncchip';c.innerHTML='<span class="syncdot"></span>Reconnecting…';document.body.append(c)}c.classList.add('show')}
-function syncOk(){const c=$('#syncchip');if(c)c.classList.remove('show')}
-
-/* keep #main stable: identical HTML is skipped (zero DOM work), and when content
-   does change, scroll position + focused input + caret are preserved automatically. */
-function armMain(main){
-  if(!main||main.__armed)return;
-  const desc=Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');
-  main.__armed=true;
-  let last='';
-  Object.defineProperty(main,'innerHTML',{
-    configurable:true,
-    get(){return desc.get.call(main)},
-    set(html){
-      html=String(html);
-      if(html===last)return;                       // nothing changed visually → don't touch the DOM at all
-      const snap=snapView(main);
-      desc.set.call(main,html);
-      last=html;
-      try{main.dataset.painted=main.dataset.view||''}catch(e){}
-      restoreView(main,snap);
-    }
-  });
-}
-function snapView(root){
-  const els=[root].concat([].slice.call(root.querySelectorAll('.chat,[style*="overflow"]'))).filter(el=>el.scrollHeight-el.clientHeight>4).slice(0,40);
-  const ae=document.activeElement;
-  const focus=(ae&&root.contains(ae)&&ae.id)?{id:ae.id,ss:ae.selectionStart,se:ae.selectionEnd,st:ae.scrollTop}:null;
-  return {y:window.scrollY,tops:els.map(el=>el.scrollTop),focus:focus};
-}
-function restoreView(root,snap){
-  try{
-    const els=[root].concat([].slice.call(root.querySelectorAll('.chat,[style*="overflow"]'))).filter(el=>el.scrollHeight-el.clientHeight>4).slice(0,40);
-    els.forEach((el,i)=>{if(snap.tops[i]!=null)el.scrollTop=snap.tops[i]});
-    if(Math.abs(window.scrollY-snap.y)>1)window.scrollTo({top:snap.y});
-    if(snap.focus){const el=root.querySelector('#'+CSS.escape(snap.focus.id));if(el){el.focus();if(snap.focus.ss!=null&&el.setSelectionRange){try{el.setSelectionRange(snap.focus.ss,snap.focus.se)}catch(e){}}if(snap.focus.st)el.scrollTop=snap.focus.st}}
-  }catch(e){}
-}
-
-/* mutations land silently: fresh values arrive in the background and the screen updates in place */
-function refreshActive(){
-  const keys=viewPaint?Array.from(new Set(viewPaint.keys.concat(['helpdesk']))):['helpdesk'];
-  keys.forEach(k=>{
-    const c=dbCache.get(k);if(c)c.at=0;
-    const go=()=>revalidate(k,{fresh:true}).catch(()=>{});
-    const infl=c&&c.inflight;                                  // if a pre-mutation fetch is still running, chain the fresh one after it
-    if(infl)Promise.resolve(infl).catch(()=>{}).then(go);else go();
-  });
-}
-const api=async(path,opt={})=>{
-  const method=(opt.method||'GET').toUpperCase();
-  if(method!=='GET')return rawFetch(path,{'method':method,'body':opt.body,'fresh':true});
-  const c=dbCache.get(path);
-  if(c&&c.data){
-    if(opt.forceFresh)return revalidate(path,{fresh:true}).then(e=>e.data);
-    if(isStale(path,c))revalidate(path).catch(()=>{});
-    return c.data;
-  }
-  return revalidate(path,{fresh:!!opt.forceFresh}).then(e=>e.data);
-};
-const upload=async(path,formData)=>{
-  let r=await fetch('/api/ios/'+path,{method:'POST',cache:'no-store',headers:{'cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{})},body:formData});
-  let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Upload failed');refreshActive();return x;
-};
-const mutate=async(path,opt={})=>{const r=await rawFetch(path,{'method':(opt.method||'POST').toUpperCase(),'body':opt.body,'fresh':true});refreshActive();return r};
+const loading=main=>{main.innerHTML=loaderHtml('Loading…')};
+const loadError=main=>{main.innerHTML=`<div class="empty" style="padding:60px 20px"><b>Could not load this page</b><div id="errDetail" style="font-size:12px;color:#999;margin-top:6px"></div></div>`};
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2});
 const num=v=>Number(v)||0;
@@ -248,7 +66,7 @@ const pill=(map,key)=>{const m=map[key]||[String(key),'gray'];return `<span clas
 const projPill=s=>s==='active'?'<span class="pill green">Active</span>':'<span class="pill gray">Inactive</span>';
 
 function save(s){state=s;localStorage.setItem('ios.session',JSON.stringify(s))}
-function logout(){localStorage.removeItem('ios.session');state=null;dbCache.clear();subs.clear();viewPaint=null;pendingRepaint=false;syncOk();boot()}
+function logout(){localStorage.removeItem('ios.session');state=null;boot()}
 
 /* ═══════════ MODAL SYSTEM ═══════════ */
 function modal(html,cls=''){
@@ -355,7 +173,7 @@ async function loginModal(){
   ov.querySelector('#mRegister').onclick=e=>{e.preventDefault();ov.remove();agentRegisterModal()};
 }
 async function adminLoginModal(){
-  let hasAdmin=true;try{hasAdmin=(await api('auth/status',{forceFresh:true})).hasAdmin}catch{}
+  let hasAdmin=true;try{hasAdmin=(await api('auth/status')).hasAdmin}catch{}
   const register=!hasAdmin;
   const ov=modal(`
     <h2>${register?'Create administrator':'Admin login'}</h2>
@@ -456,57 +274,36 @@ function adminApp(){
   </div>`;
   document.querySelectorAll('.nav button[data-v]').forEach(b=>b.onclick=()=>{aView=b.dataset.v;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));renderAdmin()});
   $('#outBtn').onclick=logout;
-  armMain($('#main'));
-  onKey('helpdesk',d=>updateHdBadge((d&&d.totalUnread)||0));
   api('helpdesk').then(d=>updateHdBadge(d.totalUnread||0)).catch(()=>{});
   renderAdmin();
 }
-const ADMIN_KEYS={
-  dashboard:['overview'],
-  partners:['partners'],
-  projects:['projects'],
-  contribute:['contributions'],
-  allocations:['allocations','projects','partners','team-allocations'],
-  payments:['payments','partners','allocations','withdrawals'],
-  performance:['performance'],
-  vaultium:['vaultium'],
-  connectx:[],
-  helpdesk:null,            // dynamic: ['helpdesk', conversation key]
-  profile:['admin/profile'],
-  users:['admin/users'],
-  settings:[]
-};
 async function renderAdmin(){
   const main=$('#main');if(!main)return;
-  const view=aView;
-  main.dataset.view=view;
-  const keys=ADMIN_KEYS[view]||(view==='helpdesk'?['helpdesk'].concat(hdSelected?['helpdesk/'+hdSelected.kind+'/'+hdSelected.id]:[]):[]);
-  viewPaint={keys:keys,fn:()=>renderAdmin()};
   try{
-    if(view==='dashboard')return await aDashboard(main);
-    if(view==='partners')return await aPartners(main);
-    if(view==='projects')return await aProjects(main);
-    if(view==='contribute')return await aContribute(main);
-    if(view==='vaultium')return await aVaultium(main);
-    if(view==='connectx')return await aConnectX(main);
-    if(view==='helpdesk')return await aHelpdesk(main);
-    if(view==='allocations')return await aAllocations(main);
-    if(view==='payments')return await aPayments(main);
-    if(view==='performance')return await aPerformance(main);
-    if(view==='profile')return await aAdminProfile(main);
-    if(view==='users')return await aUserControl(main);
-    if(view==='settings')return aSettings(main);
-  }catch(e){keepOrShowError(main,view,e)}
+    if(aView==='dashboard')return await aDashboard(main);
+    if(aView==='partners')return await aPartners(main);
+    if(aView==='projects')return await aProjects(main);
+    if(aView==='contribute')return await aContribute(main);
+    if(aView==='vaultium')return await aVaultium(main);
+    if(aView==='connectx')return await aConnectX(main);
+    if(aView==='helpdesk')return await aHelpdesk(main);
+    if(aView==='allocations')return await aAllocations(main);
+    if(aView==='payments')return await aPayments(main);
+    if(aView==='performance')return await aPerformance(main);
+    if(aView==='profile')return await aAdminProfile(main);
+    if(aView==='users')return await aUserControl(main);
+    if(aView==='settings')return aSettings(main);
+  }catch(e){loadError(main);$('#errDetail').textContent=e.message||'Network error'}
 }
 
 /* ---------- ADMIN: DASHBOARD ---------- */
 async function aDashboard(main){
-  const d=await need(main,'dashboard','overview');
-  if(d)renderDashboard(main,d);
+  loading(main);
+  const d=await api('overview');
+  renderDashboard(main,d);
 }
 function renderDashboard(main,d){
-  const k=d.kpis||{};
-  const contributions=d.contributions||[],upcoming=d.upcoming||[];
+  const k=d.kpis;
   const kpi=(l,v,c='')=>`<div class="card stat"><div><div class="label">${l}</div><div class="value">${v}</div>${c?`<div class="change">${c}</div>`:''}</div></div>`;
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}, ${esc(state.user.name)}</h1><p>Marketing agent operations, project contribution and payouts.</p></div></div>
@@ -526,7 +323,7 @@ function renderDashboard(main,d){
     <div class="card table-card">
       <div class="table-top"><div><b>Project contribution</b><div style="font-size:11px;color:#999;margin-top:3px">Agent targets and acquired users</div></div></div>
       <div style="overflow:auto"><table class="table"><thead><tr><th>Agent</th><th>Project</th><th>Start</th><th>Deadline</th><th>Target</th><th>Acquired</th><th>Progress</th><th>Commission</th><th>Status</th></tr></thead>
-      <tbody>${contributions.length?contributions.map(c=>`<tr>
+      <tbody>${d.contributions.length?d.contributions.map(c=>`<tr>
         <td><div class="partner"><div class="avatar">${esc(initials(c.partner_name))}</div><div><b>${esc(c.partner_name)}</b><small>#${esc(c.partner_code)}</small></div></div></td>
         <td>${esc(c.project_name)}</td><td>${c.start_date?fmtDate(c.start_date):'—'}</td><td>${c.deadline?fmtDate(c.deadline):'—'}</td><td>${num(c.assigned_target).toLocaleString()}</td><td><b>${num(c.acquired_users).toLocaleString()}</b></td>
         <td style="min-width:130px"><div style="display:flex;justify-content:space-between;font-size:10px"><span>${pct(num(c.acquired_users),num(c.assigned_target))}%</span><span>${num(c.assigned_target).toLocaleString()} target</span></div><div class="progress"><i style="width:${pct(num(c.acquired_users),num(c.assigned_target))}%"></i></div></td>
@@ -535,7 +332,7 @@ function renderDashboard(main,d){
     <div class="card">
       <div class="section-head"><h2>Upcoming payouts</h2><span>Not yet paid</span></div>
       <div class="row" style="display:block">
-        ${upcoming.length?upcoming.map(p=>`<div class="row" style="border-top:1px solid var(--border)"><div class="left"><div class="mini">${esc(initials(p.partner_name))}</div><div><b>${esc(p.partner_name)}</b><small>${esc(p.project_name)} · ${fmtDate(p.payment_date)}</small></div></div><div class="money"><b>${money(p.amount)}</b><small>${PAY_STATUS[p.status]?.[0]||p.status}</small></div></div>`).join(''):'<div class="empty">Nothing pending. 🎉</div>'}
+        ${d.upcoming.length?d.upcoming.map(p=>`<div class="row" style="border-top:1px solid var(--border)"><div class="left"><div class="mini">${esc(initials(p.partner_name))}</div><div><b>${esc(p.partner_name)}</b><small>${esc(p.project_name)} · ${fmtDate(p.payment_date)}</small></div></div><div class="money"><b>${money(p.amount)}</b><small>${PAY_STATUS[p.status]?.[0]||p.status}</small></div></div>`).join(''):'<div class="empty">Nothing pending. 🎉</div>'}
       </div>
     </div>
   </div>`;
@@ -544,8 +341,9 @@ function renderDashboard(main,d){
 /* ---------- ADMIN: PARTNERS ---------- */
 let pFilter={q:'',type:'',status:''};
 async function aPartners(main){
-  const partners=await need(main,'partners','partners');
-  if(partners)renderPartnersView(main,partners);
+  loading(main);
+  const partners=await api('partners');
+  renderPartnersView(main,partners);
 }
 function renderPartnersView(main,partners){
   const list=partners.filter(p=>(!pFilter.type||p.type===pFilter.type)&&(!pFilter.status||p.status===pFilter.status)&&(!pFilter.q||(p.name+' '+p.email+' '+p.partner_code).toLowerCase().includes(pFilter.q.toLowerCase())));
@@ -625,8 +423,9 @@ function partnerModal(p,all){
 
 /* ---------- ADMIN: PROJECTS ---------- */
 async function aProjects(main){
-  const projects=await need(main,'projects','projects');
-  if(projects)renderProjectsView(main,projects);
+  loading(main);
+  const projects=await api('projects');
+  renderProjectsView(main,projects);
 }
 function renderProjectsView(main,projects){
   main.innerHTML=`
@@ -678,8 +477,9 @@ function projectModal(p){
 /* ---------- ADMIN: PAYMENTS ---------- */
 let payFilterQ='';
 async function aPayments(main){
-  const r=await needData(main,'payments',['payments','partners','allocations','withdrawals']);
-  if(r)renderPaymentsView(main,r[0],r[1],r[2],r[3]);
+  loading(main);
+  const [payments,partners,allocations,withdrawals]=await Promise.all([api('payments'),api('partners'),api('allocations'),api('withdrawals')]);
+  renderPaymentsView(main,payments,partners,allocations,withdrawals);
 }
 function renderPaymentsView(main,payments,partners,allocations,withdrawals){
   withdrawals=withdrawals||[];
@@ -815,8 +615,9 @@ function paymentModal(partners,allocations,payments){
 /* ---------- ADMIN: ALLOCATIONS ---------- */
 let aFilterQ='';
 async function aAllocations(main){
-  const bundle=await needData(main,'allocations',['allocations','projects','partners','team-allocations']);
-  if(bundle)renderAllocationsView(main,bundle[0],bundle[1],bundle[2],bundle[3]);
+  loading(main);
+  const bundle=await Promise.all([api('allocations'),api('projects'),api('partners'),api('team-allocations')]);
+  renderAllocationsView(main,bundle[0],bundle[1],bundle[2],bundle[3]);
 }
 function renderAllocationsView(main,allocs,projects,partners,teamAllocs=[]){
   const list=allocs.filter(a=>!aFilterQ||(a.partner_name+' '+a.project_name).toLowerCase().includes(aFilterQ.toLowerCase()));
@@ -880,8 +681,9 @@ function allocationModal(a,projects,agreePartners){
 /* ---------- ADMIN: CONTRIBUTE ---------- */
 
 async function aContribute(main){
-  const rows=await need(main,'contribute','contributions');
-  if(rows)renderAContribute(main,rows);
+  loading(main);
+  const rows=await api('contributions');
+  renderAContribute(main,rows);
 }
 function renderAContribute(main,rows){
   const count=k=>rows.filter(r=>r.status===k).length;
@@ -961,8 +763,9 @@ function partnerViewModal(p){
 
 /* ---------- ADMIN: VAULTIUM (contribution files) ---------- */
 async function aVaultium(main){
-  const rows=await need(main,'vaultium','vaultium');
-  if(rows)renderVaultium(main,rows);
+  loading(main);
+  const rows=await api('vaultium');
+  renderVaultium(main,rows);
 }
 function renderVaultium(main,rows){
   const totalBytes=rows.reduce((a,f)=>a+num(f.file_size),0);
@@ -995,81 +798,49 @@ function renderVaultium(main,rows){
   });
 }
 
-/* ---------- ADMIN: HELPDESK (live, silent — never wipes the screen) ---------- */
-let hdSelected=null, hdConvCache={}, hdUnsub=null;
-const hdConvKey=()=>hdSelected?('helpdesk/'+hdSelected.kind+'/'+hdSelected.id):null;
+/* ---------- ADMIN: HELPDESK ---------- */
+let hdSelected=null;
 async function aHelpdesk(main){
-  const d=await need(main,'helpdesk','helpdesk');
-  if(!d||aView!=='helpdesk')return;
+  loading(main);
+  const d=await api('helpdesk');
+  if(aView!=='helpdesk')return;
   updateHdBadge(d.totalUnread||0);
   if(!hdSelected&&d.threads?.length)hdSelected={kind:d.threads[0].kind,id:d.threads[0].id};
   if(d.mode==='user'&&d.threads?.length)hdSelected={kind:'user',id:d.threads[0].id};
   renderHelpdeskPanel(main,d);
 }
-function hdThreadsHtml(threads){
-  return threads.length?threads.map(t=>`<div class="hditem ${hdSelected&&hdSelected.kind===t.kind&&hdSelected.id===t.id?'on':''}" data-hdkind="${t.kind}" data-hdid="${t.id}">
-        <div class="mini">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${esc((t.last||'').slice(0,70))} · ${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
-      </div>`).join(''):'<div class="empty">No conversations yet.</div>';
-}
 function renderHelpdeskPanel(main,d){
   const threads=d.threads||[], selected=threads.find(t=>hdSelected&&t.kind===hdSelected.kind&&t.id===hdSelected.id);
-  const selKey=hdSelected?hdSelected.kind+':'+hdSelected.id:'';
-  const shell=$('#hdThreads');
-  if(!shell||main.dataset.hdSel!==selKey){                 // first paint or conversation switch
-    main.dataset.hdSel=selKey;
-    if(hdUnsub){hdUnsub();hdUnsub=null}
-    const k=hdConvKey();if(k)hdUnsub=onKey(k,d=>{hdConvCache[selKey]=hdConvHtml(d);paintHdLog()});
-    const convHtml=hdConvCache[selKey]||loaderHtml('Loading conversation…');
-    main.innerHTML=`
+  main.innerHTML=`
   <div class="top"><div class="title"><h1>HelpDesk</h1><p>${d.mode==='user'?'Chat with the primary administrator.':'Chat with agents and admin-board users.'}</p></div></div>
   <div class="helpdesk2">
-    <aside class="hdlist"><div id="hdThreads">${hdThreadsHtml(threads)}</div></aside>
+    <aside class="hdlist">
+      ${threads.length?threads.map(t=>`<div class="hditem ${hdSelected&&hdSelected.kind===t.kind&&hdSelected.id===t.id?'on':''}" data-hdkind="${t.kind}" data-hdid="${t.id}">
+        <div class="mini">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${esc((t.last||'').slice(0,70))} · ${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
+      </div>`).join(''):'<div class="empty">No conversations yet.</div>'}
+    </aside>
     <section class="hdconversation">
-      ${selected?`<div class="hdconvhead"><div><h2>${esc(selected.name)}</h2><p>${selected.kind==='agent'?'Agent #'+esc(selected.code):d.mode==='user'?'Primary administrator':'Board user · '+esc(selected.code||'')}</p></div></div><div class="chat big" id="hdLog">${convHtml}</div><div class="chatbar"><input id="hdInput" placeholder="Write a message…"><button class="btn dark" id="hdSend">Send</button></div>`:'<div class="empty">Select a conversation from the left.</div>'}
+      ${selected?`<div class="hdconvhead"><div><h2>${esc(selected.name)}</h2><p>${selected.kind==='agent'?'Agent #'+esc(selected.code):d.mode==='user'?'Primary administrator':'Board user · '+esc(selected.code||'')}</p></div></div><div class="chat big" id="hdLog">${loaderHtml('Loading conversation…')}</div><div class="chatbar"><input id="hdInput" placeholder="Write a message…"><button class="btn dark" id="hdSend">Send</button></div>`:'<div class="empty">Select a conversation from the left.</div>'}
     </section>
   </div>`;
-    main.querySelectorAll('[data-hdid]').forEach(el=>el.onclick=()=>{hdSelected={kind:el.dataset.hdkind,id:el.dataset.hdid};renderAdmin();loadHelpdeskConversation()});
-    if(selected)loadHelpdeskConversation();
-    const send=async()=>{const input=$('#hdInput'),text=input.value.trim();if(!text||!hdSelected)return;
-      try{input.value='';await mutate('helpdesk/'+hdSelected.kind+'/'+hdSelected.id,{method:'POST',body:JSON.stringify({body:text})});loadHelpdeskConversation()}
-      catch(e){toast(e.message);if(input&&!input.value)input.value=text}};
-    const sendBtn=$('#hdSend'),inp=$('#hdInput');
-    if(sendBtn)sendBtn.onclick=send;
-    if(inp)inp.onkeydown=e=>{if(e.key==='Enter')send()};
-  }else{                                                   // silent refresh — update only the thread list
-    const listHtml=hdThreadsHtml(threads);
-    if(shell.innerHTML!==listHtml){
-      shell.innerHTML=listHtml;
-      main.querySelectorAll('[data-hdid]').forEach(el=>el.onclick=()=>{hdSelected={kind:el.dataset.hdkind,id:el.dataset.hdid};renderAdmin();loadHelpdeskConversation()});
-    }
-    paintHdLog();
-  }
-}
-function paintHdLog(){
-  if(aView!=='helpdesk'||!hdSelected)return;
-  const key=hdSelected.kind+':'+hdSelected.id, html=hdConvCache[key], log=$('#hdLog');
-  if(!log||html==null)return;
-  const stick=log.scrollHeight-log.scrollTop-log.clientHeight<60;
-  if(log.innerHTML!==html)log.innerHTML=html;
-  if(stick)log.scrollTop=log.scrollHeight;
-}
-function hdConvHtml(d){
-  const name=d.thread?.name||'User';
-  return d.messages.length?d.messages.map(m=>{
-    const mine=(hdSelected.kind==='agent'&&m.sender_type==='admin')||(hdSelected.kind==='user'&&((state.user.kind==='user'&&m.sender_type==='user')||(state.user.kind!=='user'&&m.sender_type==='owner')));
-    const who=mine?'You':name;
-    return `<div class="msg ${mine?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)} · ${esc(who)}</time></div>`;
-  }).join(''):'<div class="empty">No messages yet — say hello.</div>';
+  main.querySelectorAll('[data-hdid]').forEach(el=>el.onclick=()=>{hdSelected={kind:el.dataset.hdkind,id:el.dataset.hdid};renderHelpdeskPanel(main,d);loadHelpdeskConversation()});
+  if(selected)loadHelpdeskConversation();
 }
 async function loadHelpdeskConversation(){
   if(!hdSelected)return;
   const log=$('#hdLog');if(!log)return;
-  const selKey=hdSelected.kind+':'+hdSelected.id;
   try{
-    const d=await revalidate('helpdesk/'+hdSelected.kind+'/'+hdSelected.id,{fresh:true}).then(e=>e.data);
-    hdConvCache[selKey]=hdConvHtml(d);
-    paintHdLog();
-  }catch(e){if(!hdConvCache[selKey])log.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
+    const d=await api(`helpdesk/${hdSelected.kind}/${hdSelected.id}`);
+    const name=d.thread?.name||'User';
+    log.innerHTML=d.messages.length?d.messages.map(m=>{
+      const mine=(hdSelected.kind==='agent'&&m.sender_type==='admin')||(hdSelected.kind==='user'&&((state.user.kind==='user'&&m.sender_type==='user')||(state.user.kind!=='user'&&m.sender_type==='owner')));
+      const who=mine?'You':name;
+      return `<div class="msg ${mine?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)} · ${esc(who)}</time></div>`;
+    }).join(''):'<div class="empty">No messages yet — say hello.</div>';
+    log.scrollTop=log.scrollHeight;
+    const send=async()=>{const input=$('#hdInput'),text=input.value.trim();if(!text)return;try{input.value='';await mutate(`helpdesk/${hdSelected.kind}/${hdSelected.id}`,{method:'POST',body:JSON.stringify({body:text})});await loadHelpdeskConversation()}catch(e){toast(e.message)}};
+    $('#hdSend').onclick=send;$('#hdInput').onkeydown=e=>{if(e.key==='Enter')send()};
+  }catch(e){log.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
 }
 function updateHdBadge(n){
   const b=$('#hdBadge');
@@ -1081,8 +852,9 @@ function updateHdBadge(n){
 /* ---------- ADMIN: PERFORMANCE ---------- */
 
 async function aPerformance(main){
-  const rows=await need(main,'performance','performance');
-  if(rows)renderPerformanceView(main,rows);
+  loading(main);
+  const rows=await api('performance');
+  renderPerformanceView(main,rows);
 }
 function renderPerformanceView(main,rows){
   main.innerHTML=`
@@ -1108,11 +880,10 @@ function aSettings(main){
 /* ---------- ADMIN: CONNECTX ---------- */
 let cxView='compose', cxRecipientType='agent', cxSelected=null, cxContacts=[], cxAttachment=null;
 async function aConnectX(main){
-  const keys=['connectx/contacts?type='+cxRecipientType,'connectx/messages','connectx/settings'];
-  const r=await needData(main,'connectx',keys,{forceFresh:true});
-  if(!r)return;
-  cxContacts=r[0];
-  renderConnectX(main,r[0],r[1],r[2]);
+  loading(main);
+  const [contacts,history,settings]=await Promise.all([api('connectx/contacts?type='+cxRecipientType),api('connectx/messages'),api('connectx/settings')]);
+  cxContacts=contacts;
+  renderConnectX(main,contacts,history,settings);
 }
 function cxStatus(s){return `<span class="cxstatus ${esc(s||'queued')}">${esc(s||'queued')}</span>`}
 function renderConnectX(main,contacts,history,settings){
@@ -1181,7 +952,7 @@ function cxHistoryRow(m){return `<tr><td>${fmtDT(m.created_at)}</td><td>${esc(m.
 function wireConnectXCompose(main){
   $('#showCc').onclick=()=>{$('#cxCcWrap').style.display='block';$('#showCc').style.display='none';$('#cxCc').focus()};
   $('#showBcc').onclick=()=>{$('#cxBccWrap').style.display='block';$('#showBcc').style.display='none';$('#cxBcc').focus()};
-  $('#cxType').onchange=async e=>{cxRecipientType=e.target.value;cxSelected=null;cxAttachment=null;cxContacts=await api('connectx/contacts?type='+cxRecipientType,{forceFresh:true});const [hist,set]=await Promise.all([api('connectx/messages',{forceFresh:true}),api('connectx/settings',{forceFresh:true})]);renderConnectX(main,cxContacts,hist,set)};
+  $('#cxType').onchange=async e=>{cxRecipientType=e.target.value;cxSelected=null;cxAttachment=null;loading($('.connectxmain'));cxContacts=await api('connectx/contacts?type='+cxRecipientType);const [hist,set]=await Promise.all([api('connectx/messages'),api('connectx/settings')]);renderConnectX(main,cxContacts,hist,set)};
   $('#cxSearch').oninput=e=>{const q=e.target.value.toLowerCase();$('#cxList').innerHTML=cxContacts.filter(c=>!q||(c.name+' '+c.email+' '+(c.code||'')).toLowerCase().includes(q)).map(c=>`<div class="cxcontact ${c.id===cxSelected?'on':''}" data-cxpick="${c.id}"><b>${esc(c.name)}</b><span>${esc(c.email)}</span><small>${esc(c.subtitle||c.phone||'')}</small></div>`).join('')||'<div class="empty">No recipient found.</div>';wireCxPick()};
   const wireCxPick=()=>document.querySelectorAll('[data-cxpick]').forEach(el=>el.onclick=()=>{cxSelected=el.dataset.cxpick;cxAttachment=null;const c=cxContacts.find(x=>x.id===cxSelected);$('#cxTo').value=c?.email||'';document.querySelectorAll('[data-cxpick]').forEach(x=>x.classList.toggle('on',x===el))});
   wireCxPick();
@@ -1226,8 +997,7 @@ function wireConnectXHistory(main,history){
 /* ---------- ADMIN: USER PROFILE ---------- */
 async function aAdminProfile(main){
   loading(main);
-  const me=await need(main,'profile','admin/profile');
-  if(!me)return;
+  const me=await api('admin/profile');
   renderAdminProfile(main,me);
 }
 function renderAdminProfile(main,me){
@@ -1268,8 +1038,7 @@ function adminProfileModal(me){
 const USER_STATUS={active:['Active','green'],inactive:['Deactive','gray'],pending:['Pending request','yellow']};
 async function aUserControl(main){
   loading(main);
-  const users=await need(main,'users','admin/users');
-  if(!users)return;
+  const users=await api('admin/users');
   renderUserControl(main,users);
 }
 function renderUserControl(main,users){
@@ -1329,40 +1098,26 @@ function partnerApp(){
   </div>`;
   document.querySelectorAll('.nav button[data-v]').forEach(b=>b.onclick=()=>{pView=b.dataset.v;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));renderPartner()});
   $('#outBtn').onclick=logout;
-  armMain($('#main'));
-  onKey('helpdesk',d=>{if(!d)return;updateHdBadge(d.unread||0);if(pView==='helpdesk')paintPhLog(d)});
   api('helpdesk').then(d=>updateHdBadge(d.unread||0)).catch(()=>{});
   renderPartner();
 }
-const PARTNER_KEYS={
-  profile:['me/profile','me/payment-methods'],
-  team:['me/team'],
-  allocations:['me/allocations'],
-  contribute:['contributions/mine','me/overview'],
-  helpdesk:['helpdesk'],
-  projects:['me/overview'],
-  payments:['me/overview'],
-  performance:['me/overview']
-};
 async function renderPartner(){
   const main=$('#main');if(!main)return;
-  const view=pView;
-  main.dataset.view=view;
-  viewPaint={keys:PARTNER_KEYS[view]||[],fn:()=>renderPartner()};
   try{
-    if(view==='profile')return await pProfile(main);
-    if(view==='team')return await pTeam(main);
-    if(view==='allocations')return await pAllocations(main);
-    if(view==='contribute')return await pContribute(main);
-    if(view==='helpdesk')return await pHelpdesk(main);
-    if(view==='projects')return await pOverview(main,'projects');
-    if(view==='payments')return await pOverview(main,'payments');
-    if(view==='performance')return await pOverview(main,'performance');
-  }catch(e){keepOrShowError(main,view,e)}
+    if(pView==='profile')return await pProfile(main);
+    if(pView==='team')return await pTeam(main);
+    if(pView==='allocations')return await pAllocations(main);
+    if(pView==='contribute')return await pContribute(main);
+    if(pView==='helpdesk')return await pHelpdesk(main);
+    if(pView==='projects')return await pOverview(main,'projects');
+    if(pView==='payments')return await pOverview(main,'payments');
+    if(pView==='performance')return await pOverview(main,'performance');
+  }catch(e){loadError(main);$('#errDetail').textContent=e.message||'Network error'}
 }
 async function pProfile(main){
-  const r=await needData(main,'profile',['me/profile','me/payment-methods']);
-  if(r)renderPProfile(main,r[0],r[1]);
+  loading(main);
+  const [me,payMethods]=await Promise.all([api('me/profile'),api('me/payment-methods')]);
+  renderPProfile(main,me,payMethods);
 }
 function renderPProfile(main,me,payMethods=[]){
   main.innerHTML=`
@@ -1394,7 +1149,7 @@ function renderPProfile(main,me,payMethods=[]){
     box.querySelectorAll('[data-pm-edit]').forEach(b=>b.onclick=()=>paymentMethodModal(rows.find(x=>x.id===b.dataset.pmEdit),paintPayMethods));
     box.querySelectorAll('[data-pm-del]').forEach(b=>b.onclick=async()=>{
       if(!confirm('Delete this payment method?'))return;
-      try{await mutate('me/payment-methods/'+b.dataset.pmDel,{method:'DELETE'});toast('Payment method deleted.');paintPayMethods(await api('me/payment-methods',{forceFresh:true}))}catch(e){toast(e.message)}
+      try{await mutate('me/payment-methods/'+b.dataset.pmDel,{method:'DELETE'});toast('Payment method deleted.');paintPayMethods(await api('me/payment-methods'))}catch(e){toast(e.message)}
     });
   };
   paintPayMethods(payMethods);
@@ -1433,12 +1188,12 @@ function renderPProfile(main,me,payMethods=[]){
   };
 }
 async function pOverview(main,view){
-  const d=await need(main,view,'me/overview');
-  if(!d)return;
-  if(view==='projects')renderPProjects(main,d);else if(view==='payments')renderPPayments(main,d);else renderPPerformance(main,d);
+  loading(main);
+  const render=d=>{if(view==='projects')renderPProjects(main,d);else if(view==='payments')renderPPayments(main,d);else renderPPerformance(main,d)};
+  const d=await api('me/overview');
+  render(d);
 }
 function renderPProjects(main,d){
-    d=d||{};d.projects=d.projects||[];
     main.innerHTML=`<div class="top"><div class="title"><h1>My projects</h1><p>Projects allocated to your account.</p></div></div>
     <div class="project-grid">${d.projects.length?d.projects.map(x=>`
       <div class="project-card"><div class="detail-head"><div><h3>${esc(x.project?.name||'—')}</h3><p>${esc(x.project?.details||'')}</p></div><span class="pill blue">${catLabel(x.category)}</span></div>
@@ -1451,7 +1206,6 @@ function renderPProjects(main,d){
       </div>`).join(''):'<div class="empty" style="grid-column:1/-1">No projects allocated to you yet.</div>'}</div>`;
 }
 function renderPPayments(main,d){
-    d=d||{};d.stats=d.stats||{};d.payments=d.payments||[];d.withdrawals=d.withdrawals||[];
     main.innerHTML=`<div class="top"><div class="title"><h1>My payments</h1><p>Earnings, payout history and withdrawals.</p></div>
     <div class="actions"><button class="btn dark" id="withdrawBtn">Withdraw</button></div></div>
     <div class="kpi-grid">
@@ -1497,7 +1251,6 @@ async function withdrawModal(balance){
   };
 }
 function renderPPerformance(main,d){
-    d=d||{};d.performance=d.performance||{};d.projects=d.projects||[];
     main.innerHTML=`<div class="top"><div class="title"><h1>My performance</h1><p>Your achievement across all allocated projects.</p></div></div>
     <div class="kpi-grid">
       <div class="card stat"><div><div class="label">Total Allocations</div><div class="value">${d.performance.projects}</div></div></div>
@@ -1512,8 +1265,9 @@ function renderPPerformance(main,d){
 /* ---------- AGENT: MY TEAM ---------- */
 let teamQ='';
 async function pTeam(main){
-  const rows=await need(main,'team','me/team');
-  if(rows)renderTeamView(main,rows);
+  loading(main);
+  const rows=await api('me/team');
+  renderTeamView(main,rows);
 }
 function renderTeamView(main,rows){
   const list=rows.filter(m=>!teamQ||(m.name+' '+m.email+' '+m.code).toLowerCase().includes(teamQ.toLowerCase()));
@@ -1624,18 +1378,18 @@ function paymentMethodModal(existing,paint){
     try{
       await mutate(existing?'me/payment-methods/'+existing.id:'me/payment-methods',{method:existing?'PATCH':'POST',body:JSON.stringify(payload)});
       ov.remove();toast(existing?'Payment method updated.':'Payment method saved.');
-      if(paint)paint(await api('me/payment-methods',{forceFresh:true}));
+      if(paint)paint(await api('me/payment-methods'));
     }catch(e){toast(e.message);btn.disabled=false;btn.textContent=existing?'Save changes':'Save method'}
   };
 }
 
 /* ---------- AGENT: ALLOCATIONS ---------- */
 async function pAllocations(main){
-  const d=await need(main,'allocations','me/allocations');
-  if(d)renderAgentAllocations(main,d);
+  loading(main);
+  const d=await api('me/allocations');
+  renderAgentAllocations(main,d);
 }
 function renderAgentAllocations(main,d){
-  d={mine:d&&d.mine||[],team:d&&d.team||[]};
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Allocations</h1><p>Targets the admin assigned to you — and how you assign them to your own team.</p></div>
   <div class="actions"><button class="btn dark" id="addTeamAlloc">+ Assign to team member</button></div></div>
@@ -1710,8 +1464,9 @@ async function teamAllocModal(t,d){
 /* ---------- AGENT: CONTRIBUTE ---------- */
 
 async function pContribute(main){
-  const r=await needData(main,'contribute',['contributions/mine','me/overview']);
-  if(r)renderPContribute(main,r[0],r[1]);
+  loading(main);
+  const [rows,overview]=await Promise.all([api('contributions/mine'),api('me/overview')]);
+  renderPContribute(main,rows,overview);
 }
 function renderPContribute(main,rows,overview){
   main.innerHTML=`
@@ -1765,36 +1520,35 @@ function contributeModal(overview){
   };
 }
 
-/* ---------- AGENT: HELPDESK (live, silent — typing is never lost) ---------- */
-function phMsgsHtml(d){
-  return d.messages.length?d.messages.map(m=>`<div class="msg ${m.sender_type==='agent'?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)} · ${m.sender_type==='agent'?'You':'Admin'}</time></div>`).join(''):'<div class="empty">No messages yet — write to the administrator anytime.</div>';
-}
-function paintPhLog(d){
-  const log=$('#phLog');if(!log||pView!=='helpdesk')return;
-  const html=phMsgsHtml(d);
-  const stick=log.scrollHeight-log.scrollTop-log.clientHeight<60;
-  if(log.innerHTML!==html)log.innerHTML=html;
-  if(stick)log.scrollTop=log.scrollHeight;
-}
+/* ---------- AGENT: HELPDESK — EMS method: one-page card, no polling, log-only redraw ---------- */
 async function pHelpdesk(main){
-  const d=await need(main,'helpdesk','helpdesk');
-  if(!d||pView!=='helpdesk')return;
-  updateHdBadge(d.unread||0);
-  if(!$('#phLog')){                                        // paint the shell once — the input is never rebuilt
-    main.innerHTML=`
-    <div class="top"><div class="title"><h1>HelpDesk</h1><p>Your continuous conversation with the administrator.</p></div></div>
-    <div class="section-box" style="padding:0;overflow:hidden">
-      <div class="chat big" id="phLog"></div>
-      <div class="chatbar"><input id="phInput" placeholder="Write a message…"><button class="btn dark" id="phSend">Send</button></div>
-    </div>`;
-    const send=async()=>{const input=$('#phInput'),text=input.value.trim();if(!text)return;
-      try{input.value='';await mutate('helpdesk',{method:'POST',body:JSON.stringify({body:text})});paintPhLog(dbCache.get('helpdesk')?.data||d)}
-      catch(e){toast(e.message);if(input&&!input.value)input.value=text}};
-    $('#phSend').onclick=send;
-    $('#phInput').onkeydown=e=>{if(e.key==='Enter')send()};
-  }
-  paintPhLog(d);
+  main.innerHTML=`
+  <div class="top"><div class="title"><h1>HelpDesk</h1><p>Your continuous conversation with the administrator.</p></div></div>
+  <div class="section-box hdpage">
+    <div class="chat big" id="phLog">${loaderHtml('Loading conversation…')}</div>
+    <div class="chatbar"><input id="phInput" placeholder="Write a message…"><button class="btn dark" id="phSend">Send</button></div>
+  </div>`;
+  const draw=async()=>{
+    const d=await api('helpdesk');
+    if(pView!=='helpdesk')return;
+    const log=$('#phLog');if(!log)return;
+    log.innerHTML=d.messages.length?d.messages.map(m=>`<div class="msg ${m.sender_type==='agent'?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)} · ${m.sender_type==='agent'?'You':'Admin'}</time></div>`).join(''):'<div class="empty">No messages yet — write to the administrator anytime.</div>';
+    log.scrollTop=log.scrollHeight;
+    updateHdBadge(d.unread||0);
+  };
+  const send=async()=>{
+    const input=$('#phInput'),text=input.value.trim();
+    if(!text)return;
+    const btn=$('#phSend');btn.disabled=true;
+    try{input.value='';await mutate('helpdesk',{method:'POST',body:JSON.stringify({body:text})});await draw()}
+    catch(e){toast(e.message);if(input&&!input.value)input.value=text}
+    finally{btn.disabled=false;input.focus()}
+  };
+  $('#phSend').onclick=send;
+  $('#phInput').onkeydown=e=>{if(e.key==='Enter')send()};
+  await draw();
 }
+
 /* ═══════════ BOOT ═══════════ */
 
 async function boot(){
@@ -1803,7 +1557,7 @@ async function boot(){
     document.body.classList.add('dashboard-mode');
     app.innerHTML=loaderHtml('Connecting to database…');
     try{
-      const fresh=await api('auth/session',{forceFresh:true});
+      const fresh=await api('auth/session');
       save({token:state.token,role:fresh.role,user:fresh.user});
       if(state.role==='admin')return adminApp();
       if(state.role==='partner')return partnerApp();
