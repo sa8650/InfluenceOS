@@ -466,29 +466,45 @@ body.dashboard-mode .chat .loader-wrap{min-height:120px;background:transparent;b
 @keyframes syncpulse{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
 
 /* ═══════════ ONE-PAGE FIT — HelpDesk & ConnectX (EMS hdwrap pattern) ═══════════
-   The card is never taller than the screen: only the message log scrolls
-   inside, so the Send bar is always visible without page scrolling. */
-.helpdesk2{height:min(720px,calc(100dvh - 205px));min-height:440px}
+   Card height ≈10% larger, still guaranteed to fit the screen: only the message
+   log scrolls inside the card — the Send bar is always visible, no page scroll. */
+.helpdesk2{height:min(792px,calc(100dvh - 172px));min-height:480px}
 .hdlist{min-height:0}
 .hdconversation{min-height:0}
 .hdconversation .chat.big{flex:1 1 auto;min-height:0;max-height:none}
 .hdconversation .chatbar{flex:0 0 auto}
-.section-box.hdpage{height:min(720px,calc(100dvh - 205px));min-height:440px;display:flex;flex-direction:column;padding:0;overflow:hidden}
+.section-box.hdpage{height:min(792px,calc(100dvh - 172px));min-height:480px;display:flex;flex-direction:column;padding:0;overflow:hidden}
 .hdpage .chat.big{flex:1 1 auto;min-height:0;max-height:none}
 .hdpage .chatbar{flex:0 0 auto}
-/* ConnectX workspace fits one screen; every pane scrolls internally */
-.connectx{height:min(780px,calc(100dvh - 205px));min-height:500px}
+/* ConnectX fits one screen; panes have natural (normal) sizes and scroll internally */
+.connectx{height:min(858px,calc(100dvh - 172px));min-height:540px}
 .connectxmain{min-height:0;overflow-y:auto;display:flex;flex-direction:column}
 .cxhead{flex:0 0 auto}
-.cxcompose{flex:1 1 auto;min-height:0;align-items:stretch}
-.cxrecipient{display:flex;flex-direction:column;min-height:0}
-.cxrecipient .cxlist{flex:1 1 auto;min-height:0;max-height:none}
-.cxcompose .cxfields{display:flex;flex-direction:column;min-height:0}
-.cxcompose .cxfields label:has(> textarea){flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
-.cxcompose .cxfields textarea{flex:1 1 auto;min-height:120px}
+.cxcompose{flex:0 1 auto;align-items:start}
+.cxrecipient{min-height:0}
+.cxrecipient .cxlist{max-height:300px}
+.cxcompose .cxfields{display:flex;flex-direction:column}
+.cxcompose .cxfields textarea{min-height:140px}
 .cxcompose .cxfields #cxSend{flex:0 0 auto;margin-top:10px}
+/* normal-size ConnectX sidebar buttons */
+.connectxnav{padding:12px 10px;gap:4px}
+.connectxnav button{padding:8px 12px;font-size:12.5px;font-weight:600;border-radius:8px}
+.connectxnav button small{font-size:10px}
 @media(max-width:760px){
-  .helpdesk2,.section-box.hdpage{height:min(700px,calc(100dvh - 185px));min-height:420px}
+  .helpdesk2,.section-box.hdpage{height:min(770px,calc(100dvh - 160px));min-height:440px}
   .connectx{height:auto;min-height:0}
   .hdlist{max-height:220px}
+  .cxrecipient .cxlist{max-height:240px}
 }
+
+/* ═══════════ PERMISSION BOX (Add/Edit user modal) ═══════════ */
+.permbox{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:#fafbfc}
+.permnote{font-size:11px;color:#8a94a6;margin-bottom:10px;line-height:1.5}
+.permbox.locked{opacity:.65}
+.permgrid{display:flex;flex-direction:column;gap:6px}
+.permrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 10px;background:#fff;border:1px solid #eef1f5;border-radius:9px}
+.permrow>b{font-size:12px;color:#334155;white-space:nowrap}
+.permacts{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:flex-end}
+.permchk{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#475569;cursor:pointer;white-space:nowrap}
+.permchk input{width:14px;height:14px;accent-color:#111;margin:0;cursor:pointer}
+@media(max-width:600px){.permrow{flex-direction:column;align-items:flex-start}.permacts{justify-content:flex-start}}
