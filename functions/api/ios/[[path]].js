@@ -483,7 +483,7 @@ export async function onRequest(context){
         templateStyles=[...attachmentHtml.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/ig)].map(m=>m[0]).join('\n');
         attachmentHtml=attachmentHtml.replace(/<style\b[^>]*>[\s\S]*?<\/style>/ig,'');
       }
-      let html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+templateStyles+'</head><body style="margin:0;padding:16px;background:#f4f6fa"><div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55"><p style="margin:0 0 16px;color:#64748b;font-size:12px">Sent from <b>DoxTox ConnectX</b></p>'+safeText(b.body||'').replace(/\n/g,'<br>')+attachmentHtml+'</div></body></html>';
+      let html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+templateStyles+'</head><body style="margin:0;padding:16px;background:#f4f6fa"><div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55">'+(String(b.body||'').trim()?safeText(b.body||'').replace(/\n/g,'<br>'):'')+attachmentHtml+'</div></body></html>';
       let [msg]=await db(env,'connectx_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sender_id:s.id,sender_kind:s.kind==='user'?'user':'owner',recipient_type:recipientType,recipient_id:recipientId,recipient_name:recipientName||null,from_email:fromEmail,to_emails:to,cc_emails:cc,bcc_emails:bcc,subject:String(b.subject).trim().slice(0,220),custom_body:String(b.body||'').slice(0,10000),body_html:html,provider:'brevo_api',status:'sending'})});
       if(!env.BREVO_API_KEY){await db(env,`connectx_messages?id=eq.${msg.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'failed',error_message:'BREVO_API_KEY is not configured.',updated_at:new Date().toISOString()})});return fail('ConnectX provider is not configured. Add BREVO_API_KEY to Cloudflare secrets.',503)}
       let res=await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',headers:{'api-key':env.BREVO_API_KEY,'content-type':'application/json'},body:JSON.stringify({sender:{name:senderName,email:fromEmail},replyTo:cfg.reply_to?{email:cfg.reply_to}:undefined,to:to.map(email=>({email})),...(cc.length?{cc:cc.map(email=>({email}))}:{}),...(bcc.length?{bcc:bcc.map(email=>({email}))}:{}),subject:msg.subject,htmlContent:html})}),out=await res.json().catch(()=>({}));
@@ -808,20 +808,60 @@ export async function onRequest(context){
     }
 
     if(path==='helpdesk'&&method==='GET'&&s.role==='admin'){
-      let [rows,partners]=await Promise.all([
+      if(s.kind==='user'){
+        let rows=await db(env,`admin_user_messages?user_id=eq.${s.id}&select=*&order=created_at.desc&limit=500`);
+        const unread=rows.filter(m=>m.sender_type==='owner'&&!m.read_by_user).length;
+        return json({mode:'user',totalUnread:unread,threads:[{kind:'user',id:s.id,name:'Primary Administrator',code:'DoxTox',last:rows[0]?.body||'Start a conversation with the administrator.',last_at:rows[0]?.created_at||new Date().toISOString(),unread,total:rows.length}]});
+      }
+      let [agentMsgs,partners,userMsgs,users]=await Promise.all([
         db(env,'helpdesk_messages?select=*&order=created_at.desc&limit=5000'),
-        db(env,'partners?select=id,name,partner_code')]);
-      const sm=Object.fromEntries(partners.map(x=>[x.id,x]));
-      const threads={};
-      for(const m of rows){
-        threads[m.partner_id]??={partner_id:m.partner_id,partner_name:sm[m.partner_id]?.name||'—',partner_code:sm[m.partner_id]?.partner_code||'',last:'',last_at:m.created_at,unread:0,total:0};
-        const t=threads[m.partner_id];
-        t.total++;
-        if(m.sender_type==='agent'&&!m.read_by_admin)t.unread++;
-        if(!t.last_at||new Date(m.created_at)>=new Date(t.last_at)){t.last=m.body;t.last_at=m.created_at}
+        db(env,'partners?select=id,name,partner_code'),
+        db(env,'admin_user_messages?select=*&order=created_at.desc&limit=5000'),
+        db(env,'admin_users?select=id,name,email,status&order=created_at.desc')]);
+      const sm=Object.fromEntries(partners.map(x=>[x.id,x])),threads={};
+      for(const m of agentMsgs){
+        const key='agent:'+m.partner_id;
+        threads[key]??={kind:'agent',id:m.partner_id,name:sm[m.partner_id]?.name||'—',code:sm[m.partner_id]?.partner_code||'',last:'',last_at:m.created_at,unread:0,total:0};
+        const t=threads[key];t.total++;if(m.sender_type==='agent'&&!m.read_by_admin)t.unread++;if(!t.last_at||new Date(m.created_at)>=new Date(t.last_at)){t.last=m.body;t.last_at=m.created_at}
+      }
+      const umap=Object.fromEntries(users.map(x=>[x.id,x]));
+      for(const u of users){const key='user:'+u.id;threads[key]??={kind:'user',id:u.id,name:u.name,code:u.status,last:'No messages yet.',last_at:u.created_at,unread:0,total:0}}
+      for(const m of userMsgs){
+        const key='user:'+m.user_id,u=umap[m.user_id];
+        threads[key]??={kind:'user',id:m.user_id,name:u?.name||'User',code:u?.status||'',last:'',last_at:m.created_at,unread:0,total:0};
+        const t=threads[key];t.total++;if(m.sender_type==='user'&&!m.read_by_owner)t.unread++;if(!t.last_at||new Date(m.created_at)>=new Date(t.last_at)){t.last=m.body;t.last_at=m.created_at}
       }
       const list=Object.values(threads).sort((a,b)=>new Date(b.last_at)-new Date(a.last_at));
-      return json({threads:list,totalUnread:list.reduce((a,t)=>a+t.unread,0)});
+      return json({mode:'owner',threads:list,totalUnread:list.reduce((a,t)=>a+t.unread,0)});
+    }
+    if(/^helpdesk\/agent\/[^/]+$/.test(path)&&method==='GET'&&s.role==='admin'){
+      const pid=path.split('/')[2];
+      let [rows,partner]=await Promise.all([db(env,`helpdesk_messages?partner_id=eq.${pid}&select=*&order=created_at.asc&limit=1000`),db(env,`partners?id=eq.${pid}&select=id,name,partner_code`)]);
+      if(!partner.length)return fail('Agent not found.',404);
+      await db(env,`helpdesk_messages?partner_id=eq.${pid}&sender_type=eq.agent&read_by_admin=eq.false`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({read_by_admin:true})});
+      return json({thread:{kind:'agent',id:pid,name:partner[0].name,code:partner[0].partner_code},messages:rows.map(m=>({...m,read_by_admin:true}))});
+    }
+    if(/^helpdesk\/agent\/[^/]+$/.test(path)&&method==='POST'&&s.role==='admin'){
+      const pid=path.split('/')[2];let b=await body(request),text=String(b.body||'').trim();if(!text)return fail('Message cannot be empty.');
+      let [partner]=await db(env,`partners?id=eq.${pid}&select=id`);if(!partner)return fail('Agent not found.',404);
+      const [out]=await db(env,'helpdesk_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_id:pid,sender_type:'admin',sender_id:s.id,body:text.slice(0,2000),read_by_admin:true})});return json(out,201);
+    }
+    if(/^helpdesk\/user\/[^/]+$/.test(path)&&method==='GET'&&s.role==='admin'){
+      const uid=path.split('/')[2];
+      if(s.kind==='user'&&uid!==s.id)return fail('Permission denied.',403);
+      let [rows,user]=await Promise.all([db(env,`admin_user_messages?user_id=eq.${uid}&select=*&order=created_at.asc&limit=1000`),db(env,`admin_users?id=eq.${uid}&select=id,name,email,status`)]);
+      if(!user.length)return fail('User not found.',404);
+      if(s.kind==='user')await db(env,`admin_user_messages?user_id=eq.${uid}&sender_type=eq.owner&read_by_user=eq.false`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({read_by_user:true})});
+      else await db(env,`admin_user_messages?user_id=eq.${uid}&sender_type=eq.user&read_by_owner=eq.false`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({read_by_owner:true})});
+      return json({thread:{kind:'user',id:uid,name:s.kind==='user'?'Primary Administrator':user[0].name,code:user[0].status},messages:rows.map(m=>({...m,read_by_owner:true,read_by_user:true}))});
+    }
+    if(/^helpdesk\/user\/[^/]+$/.test(path)&&method==='POST'&&s.role==='admin'){
+      const uid=path.split('/')[2];
+      if(s.kind==='user'&&uid!==s.id)return fail('Permission denied.',403);
+      let b=await body(request),text=String(b.body||'').trim();if(!text)return fail('Message cannot be empty.');
+      let [user]=await db(env,`admin_users?id=eq.${uid}&select=id`);if(!user)return fail('User not found.',404);
+      const sender=s.kind==='user'?'user':'owner';
+      const [out]=await db(env,'admin_user_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_id:uid,sender_type:sender,sender_id:s.id,body:text.slice(0,2000),read_by_owner:sender==='owner',read_by_user:sender==='user'})});return json(out,201);
     }
     if(/^helpdesk\/[^/]+$/.test(path)&&method==='GET'&&s.role==='admin'){
       const pid=path.split('/')[1];
