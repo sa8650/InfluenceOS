@@ -13,7 +13,7 @@ const upload=async(path,formData)=>{
   let r=await fetch('/api/ios/'+path,{method:'POST',headers:{...(state?.token?{authorization:'Bearer '+state.token}:{})},body:formData});
   let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Upload failed');return x;
 };
-const mutate=async(path,opt={})=>api(path,opt);
+const mutate=async(path,opt={})=>{const r=await api(path,opt);if(!String(path).startsWith('notifications'))refreshNotifs();return r};
 const loaderHtml=(text='')=>`<div class="loader-wrap"><div class="loader">
     <span class="bar"></span>
     <span class="bar"></span>
@@ -50,6 +50,45 @@ function filesModal(files){
   <div class="modal-actions"><button class="btn" data-close>Close</button></div>`);
   ov.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>openFile(b.dataset.view,b.dataset.name,false));
   ov.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>openFile(b.dataset.dl,b.dataset.name,true));
+}
+/* ═══════════ NOTIFICATIONS (admin & agent inboxes) ═══════════ */
+let notifCache={items:[],unread:0};
+async function refreshNotifs(){
+  try{
+    const d=await api('notifications');
+    notifCache=d||{items:[],unread:0};
+    updateNotifBadge(notifCache.unread||0);
+    const panel=document.getElementById('notifList');
+    if(panel)panel.innerHTML=notifListHtml(notifCache.items||[]);
+  }catch(e){}
+}
+function updateNotifBadge(n){const b=document.getElementById('notifBadge');if(!b)return;b.textContent=n>9?'9+':n;b.style.display=n?'inline-block':'none'}
+function notifListHtml(items){
+  return items.length?items.map(n=>`<div class="notifitem ${n.read?'':'unread'}" data-nid="${n.id}" data-nlink="${esc(n.link||'')}" style="cursor:pointer">
+    <div class="notifrow"><b>${esc(n.title)}</b>${n.read?'':'<span class="notifdot"></span>'}</div>
+    ${n.body?`<p>${esc(n.body)}</p>`:''}
+    <time>${fmtDT(n.created_at)}</time></div>`).join(''):'<div class="empty">No notifications yet.</div>';
+}
+function notifBellHtml(){return `<button class="notifbtn" id="notifBtn">🔔<span class="navbadge" id="notifBadge" style="display:none"></span></button>`}
+function notificationsModal(){
+  const ov=modal(`<h2>🔔 Notifications</h2><p>Latest updates for your account — click one to open the related page.</p>
+    <div id="notifList">${loaderHtml('Loading…')}</div>
+    <div class="modal-actions"><button class="btn" id="notifReadAll">Mark all read</button><button class="btn dark" data-close>Close</button></div>`,'wide');
+  refreshNotifs();
+  ov.querySelector('#notifReadAll').onclick=async()=>{try{await mutate('notifications/read',{method:'POST',body:JSON.stringify({})});await refreshNotifs()}catch(e){toast(e.message)}};
+  const list=ov.querySelector('#notifList');
+  list.onclick=async e=>{
+    const it=e.target.closest('[data-nid]');if(!it)return;
+    const nid=it.dataset.nid,link=it.dataset.nlink;
+    try{await mutate('notifications/read',{method:'POST',body:JSON.stringify({id:nid})})}catch(err){}
+    ov.remove();
+    if(link){
+      const btn=document.querySelector('.nav button[data-v="'+link+'"]');
+      if(btn)btn.click();
+      else toast(state?.role==='admin'?'You do not have access to that page.':'That page is not available.');
+    }
+  };
+  return ov;
 }
 function toast(m){let e=$('#toast');e.textContent=m;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),3200)}
 
@@ -301,6 +340,7 @@ function adminApp(){
   app.innerHTML=`<div class="app">
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>powered by DoxTox</small></div>
+      ${notifBellHtml()}
       <div class="nav-label">Workspace</div>
       <div class="nav">${nav.map(([k,i,l])=>`<button data-v="${k}" class="${k===aView?'active':''}"><span class="icon">${i}</span> ${l}</button>`).join('')}</div>
       <div class="nav-label">System</div>
@@ -311,11 +351,14 @@ function adminApp(){
   </div>`;
   document.querySelectorAll('.nav button[data-v]').forEach(b=>b.onclick=()=>{aView=b.dataset.v;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));renderAdmin()});
   $('#outBtn').onclick=logout;
+  wire('notifBtn',()=>notificationsModal());
+  refreshNotifs();
   api('helpdesk').then(d=>updateHdBadge(d.totalUnread||0)).catch(()=>{});
   renderAdmin();
 }
 async function renderAdmin(){
   const main=$('#main');if(!main)return;
+  refreshNotifs();
   try{
     if(aView==='dashboard')return await aDashboard(main);
     if(aView==='partners')return await aPartners(main);
@@ -1142,6 +1185,7 @@ function partnerApp(){
   app.innerHTML=`<div class="app">
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>agent portal · DoxTox</small></div>
+      ${notifBellHtml()}
       <div class="nav-label">My workspace</div>
       <div class="nav">${nav.map(([k,i,l])=>`<button data-v="${k}" class="${k===pView?'active':''}"><span class="icon">${i}</span> ${l}</button>`).join('')}</div>
       <div class="sidebottom"><button id="outBtn">⏻ Logout</button></div>
@@ -1150,11 +1194,14 @@ function partnerApp(){
   </div>`;
   document.querySelectorAll('.nav button[data-v]').forEach(b=>b.onclick=()=>{pView=b.dataset.v;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));renderPartner()});
   $('#outBtn').onclick=logout;
+  wire('notifBtn',()=>notificationsModal());
+  refreshNotifs();
   api('helpdesk').then(d=>updateHdBadge(d.unread||0)).catch(()=>{});
   renderPartner();
 }
 async function renderPartner(){
   const main=$('#main');if(!main)return;
+  refreshNotifs();
   try{
     if(pView==='profile')return await pProfile(main);
     if(pView==='team')return await pTeam(main);
