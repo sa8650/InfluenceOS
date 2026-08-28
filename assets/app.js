@@ -3,25 +3,34 @@ const $=s=>document.querySelector(s), app=$('#app');
 let state=JSON.parse(localStorage.getItem('ios.session')||'null');
 
 const freshUrl=path=>'/api/ios/'+path+((path.includes('?')?'&':'?')+'_fresh='+Date.now());
+const DATA_TTL=10000, dbCache=new Map();
+let silentRefresh=false, activeRefreshTimer=null, activeRefreshKey='';
+const cacheKey=(path,opt={})=>(opt.method||'GET').toUpperCase()+':'+path;
 const api=async(path,opt={})=>{
-  const method=(opt.method||'GET').toUpperCase();
+  const method=(opt.method||'GET').toUpperCase(), key=cacheKey(path,opt), now=Date.now();
+  if(method==='GET'&&!opt.forceFresh){
+    const c=dbCache.get(key);
+    if(c&&now-c.time<DATA_TTL)return c.data;
+  }
   const url=method==='GET'?freshUrl(path):'/api/ios/'+path;
   let r=await fetch(url,{cache:'no-store',...opt,headers:{'content-type':'application/json','cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{}),...(opt.headers||{})}});
   let x=await r.json().catch(()=>({}));
   if(!r.ok)throw Error(x.error||'Request failed');
+  if(method==='GET')dbCache.set(key,{time:Date.now(),data:x});
   return x;
 };
 const upload=async(path,formData)=>{
   let r=await fetch('/api/ios/'+path,{method:'POST',cache:'no-store',headers:{'cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{})},body:formData});
-  let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Upload failed');return x;
+  let x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'Upload failed');dbCache.clear();return x;
 };
-const mutate=api;
-const loaderHtml=(text='Loading fresh data from database…')=>`<div class="loader-wrap"><div class="loader">
+const mutate=async(path,opt={})=>{const r=await api(path,{...opt,forceFresh:true});dbCache.clear();return r};
+const loaderHtml=(text='')=>`<div class="loader-wrap"><div class="loader">
     <span class="bar"></span>
     <span class="bar"></span>
     <span class="bar"></span>
   </div>${text?`<div class="loader-text">${esc(text)}</div>`:''}</div>`;
-const loading=main=>{main.innerHTML=loaderHtml()};
+const loading=main=>{if(!silentRefresh)main.innerHTML=loaderHtml()};
+const scheduleActiveRefresh=(key,fn)=>{activeRefreshKey=key;clearInterval(activeRefreshTimer);activeRefreshTimer=setInterval(async()=>{if(activeRefreshKey!==key||document.hidden||document.querySelector('.overlay')||/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName||''))return;try{silentRefresh=true;await fn()}catch{}finally{silentRefresh=false}},DATA_TTL)};
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2});
 const num=v=>Number(v)||0;
@@ -280,6 +289,7 @@ function adminApp(){
 }
 async function renderAdmin(){
   const main=$('#main');if(!main)return;
+  scheduleActiveRefresh('admin:'+aView,()=>renderAdmin());
   clearInterval(phdPoll);
   try{
     if(aView==='dashboard')return await aDashboard(main);
@@ -801,51 +811,48 @@ function renderVaultium(main,rows){
 }
 
 /* ---------- ADMIN: HELPDESK ---------- */
-let hdPoll=null;
+let hdPoll=null, hdSelected=null;
 async function aHelpdesk(main){
-  main.innerHTML=loaderHtml('Loading…');
-  const render=async()=>{
-    const d=await api('helpdesk');
-    if(aView!=='helpdesk')return;
-    updateHdBadge(d.totalUnread||0);
-    renderHelpdeskThreads(main,d.threads);
-  };
-  await render();
-  clearInterval(hdPoll);
-  hdPoll=setInterval(()=>{if(aView==='helpdesk')render().catch(()=>{})},12000);
+  loading(main);
+  const d=await api('helpdesk');
+  if(aView!=='helpdesk')return;
+  updateHdBadge(d.totalUnread||0);
+  if(!hdSelected&&d.threads?.length)hdSelected={kind:d.threads[0].kind,id:d.threads[0].id};
+  if(d.mode==='user'&&d.threads?.length)hdSelected={kind:'user',id:d.threads[0].id};
+  renderHelpdeskPanel(main,d);
 }
-function renderHelpdeskThreads(main,threads){
+function renderHelpdeskPanel(main,d){
+  const threads=d.threads||[], selected=threads.find(t=>hdSelected&&t.kind===hdSelected.kind&&t.id===hdSelected.id);
   main.innerHTML=`
-  <div class="top"><div class="title"><h1>HelpDesk</h1><p>One continuous conversation with every agent.</p></div></div>
-  <div class="section-box">
-    ${threads.length?threads.map(t=>`<div class="row" style="cursor:pointer" data-thread="${t.partner_id}">
-      <div class="left"><div class="mini">${esc(initials(t.partner_name))}</div>
-        <div><b>${esc(t.partner_name)} <small style="color:#888">#${esc(t.partner_code)}</small></b>
-        <small>${esc((t.last||'').slice(0,80))} · ${fmtDT(t.last_at)} · ${t.total} message${t.total===1?'':'s'}</small></div></div>
-      <div>${t.unread?`<span class="pill red">${t.unread} new</span>`:'<span class="pill gray">Read</span>'}</div>
-    </div>`).join(''):'<div class="empty">No conversations yet. Agents can start one from their HelpDesk page.</div>'}
+  <div class="top"><div class="title"><h1>HelpDesk</h1><p>${d.mode==='user'?'Chat with the primary administrator.':'Chat with agents and admin-board users.'}</p></div></div>
+  <div class="helpdesk2">
+    <aside class="hdlist">
+      ${threads.length?threads.map(t=>`<div class="hditem ${hdSelected&&hdSelected.kind===t.kind&&hdSelected.id===t.id?'on':''}" data-hdkind="${t.kind}" data-hdid="${t.id}">
+        <div class="mini">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${esc((t.last||'').slice(0,70))} · ${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
+      </div>`).join(''):'<div class="empty">No conversations yet.</div>'}
+    </aside>
+    <section class="hdconversation">
+      ${selected?`<div class="hdconvhead"><div><h2>${esc(selected.name)}</h2><p>${selected.kind==='agent'?'Agent #'+esc(selected.code):d.mode==='user'?'Primary administrator':'Board user · '+esc(selected.code||'')}</p></div></div><div class="chat big" id="hdLog">${loaderHtml('Loading conversation…')}</div><div class="chatbar"><input id="hdInput" placeholder="Write a message…"><button class="btn dark" id="hdSend">Send</button></div>`:'<div class="empty">Select a conversation from the left.</div>'}
+    </section>
   </div>`;
-  main.querySelectorAll('[data-thread]').forEach(r=>r.onclick=()=>helpdeskChatModal(r.dataset.thread));
+  main.querySelectorAll('[data-hdid]').forEach(el=>el.onclick=()=>{hdSelected={kind:el.dataset.hdkind,id:el.dataset.hdid};renderHelpdeskPanel(main,d);loadHelpdeskConversation()});
+  if(selected)loadHelpdeskConversation();
 }
-function helpdeskChatModal(partnerId){
-  const ov=modal(`<h2 id="hcTitle">Conversation</h2><p>Messages are continuous and never cleared.</p>
-    <div class="chat" id="hcLog">${loaderHtml("Loading…")}</div>
-    <div class="chatbar"><input id="hcInput" placeholder="Write a reply…"><button class="btn dark" id="hcSend">Send</button></div>`);
-  const log=ov.querySelector('#hcLog');
-  const paint=(partner,messages)=>{
-    ov.querySelector('#hcTitle').textContent='Conversation with '+partner.name;
-    log.innerHTML=messages.length?messages.map(m=>`<div class="msg ${m.sender_type==='admin'?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)} · ${m.sender_type==='admin'?'You':partner.name}</time></div>`).join(''):'<p class="muted">No messages yet — say hello.</p>';
+async function loadHelpdeskConversation(){
+  if(!hdSelected)return;
+  const log=$('#hdLog');if(!log)return;
+  try{
+    const d=await api(`helpdesk/${hdSelected.kind}/${hdSelected.id}`,{forceFresh:true});
+    const name=d.thread?.name||'User';
+    log.innerHTML=d.messages.length?d.messages.map(m=>{
+      const mine=(hdSelected.kind==='agent'&&m.sender_type==='admin')||(hdSelected.kind==='user'&&((state.user.kind==='user'&&m.sender_type==='user')||(state.user.kind!=='user'&&m.sender_type==='owner')));
+      const who=mine?'You':name;
+      return `<div class="msg ${mine?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)} · ${esc(who)}</time></div>`;
+    }).join(''):'<div class="empty">No messages yet — say hello.</div>';
     log.scrollTop=log.scrollHeight;
-  };
-  const load=async()=>{const d=await api('helpdesk/'+partnerId);paint(d.partner,d.messages);return d};
-  load().catch(e=>log.innerHTML=`<div class="empty">${esc(e.message)}</div>`);
-  const send=async()=>{
-    const input=ov.querySelector('#hcInput'),text=input.value.trim();
-    if(!text)return;
-    try{input.value='';await mutate('helpdesk/'+partnerId,{method:'POST',body:JSON.stringify({body:text})});await load()}catch(e){toast(e.message)}
-  };
-  ov.querySelector('#hcSend').onclick=send;
-  ov.querySelector('#hcInput').onkeydown=e=>{if(e.key==='Enter')send()};
+    const send=async()=>{const input=$('#hdInput'),text=input.value.trim();if(!text)return;try{input.value='';await mutate(`helpdesk/${hdSelected.kind}/${hdSelected.id}`,{method:'POST',body:JSON.stringify({body:text})});await loadHelpdeskConversation();dbCache.delete('GET:helpdesk')}catch(e){toast(e.message)}};
+    $('#hdSend').onclick=send;$('#hdInput').onkeydown=e=>{if(e.key==='Enter')send()};
+  }catch(e){log.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
 }
 function updateHdBadge(n){
   const b=$('#hdBadge');
@@ -1108,6 +1115,7 @@ function partnerApp(){
 }
 async function renderPartner(){
   const main=$('#main');if(!main)return;
+  scheduleActiveRefresh('partner:'+pView,()=>renderPartner());
   try{
     if(pView==='profile')return await pProfile(main);
     clearInterval(hdPoll);
