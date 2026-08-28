@@ -131,3 +131,13 @@ functions/api/ios/[[path]].js
 ```
 
 This keeps the existing working API namespace while making the entire app independent from EMS.
+
+
+## Silent background sync
+
+The UI no longer shows loading spinners or blanks out during refreshes. Data is
+painted instantly from a local cache and revalidated silently in the background
+(~15s; HelpDesk ~12s); only changed values update, with scroll and focus
+preserved. See **[SILENT_SYNC_NOTES.md](SILENT_SYNC_NOTES.md)** for the full
+architecture, the optional `015_fast_aggregates.sql` Supabase migration, and
+tuning knobs.
