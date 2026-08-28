@@ -15,6 +15,7 @@ async function check(password,stored){let [,i,s,v]=stored.split('$'),iterations=
 function db(env,path,opt={}){return fetch(env.IOS_SUPABASE_URL+'/rest/v1/'+path,{...opt,headers:{apikey:env.IOS_SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.IOS_SUPABASE_SERVICE_ROLE_KEY,Prefer:'return=representation',...(opt.headers||{})}}).then(async r=>{let x=await r.json().catch(()=>null);if(!r.ok)throw Error(x?.message||'Database request failed');return x;});}
 async function body(req){try{return await req.json()}catch{return {}}}
 const num=x=>Number(x)||0;
+const catLabel=c=>String(c||'users').charAt(0).toUpperCase()+String(c||'users').slice(1);
 /* ---------- ADMIN PERMISSIONS (board users; the primary owner always has full access) ---------- */
 const PERM_MODULES={
   agents:['show','add','edit','delete'],
@@ -28,6 +29,9 @@ const PERM_MODULES={
   users:['show','add','edit','delete']
 };
 const FULL_PERMS=Object.fromEntries(Object.entries(PERM_MODULES).map(([m,acts])=>[m,Object.fromEntries(acts.map(a=>[a,true]))]));
+/* ---------- NOTIFICATIONS (admin & agent inboxes) ---------- */
+const notifyAdmins=(env,kind,title,body,link)=>db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'admin',kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})}).catch(()=>{});
+const notifyPartner=(env,pid,kind,title,body,link)=>(!pid?Promise.resolve():db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'partner',partner_id:pid,kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})})).catch(()=>{});
 const cleanPerms=p=>{const o={};for(const[m,acts]of Object.entries(PERM_MODULES)){o[m]={};for(const a of acts)o[m][a]=!!(p&&p[m]&&p[m][a]);}return o;};
 const PARTNER_TYPES=['youtuber','facebook','tiktoker','instagram','telegram','marketing_agent','agency'];
 const PARTNER_STATUSES=['disagree','agree','not_response','waiting'];
@@ -143,6 +147,7 @@ export async function onRequest(context){
       for(let i=0;i<15;i++){let c=String(crypto.getRandomValues(new Uint32Array(1))[0]%9000+1000);let used=await db(env,`partners?partner_code=eq.${c}&select=id`);if(!used.length){partnerCode=c;break}}
       if(!partnerCode)throw Error('Could not allocate a 4-digit Agent ID. Please retry.');
       const [out]=await db(env,'partners',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_code:partnerCode,name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:String(b.address).slice(0,300),type:b.type,accounts:[],password_hash:await hash(String(b.password)),login_access:true,status:'waiting',note:'Self-registered account — set status to Agree after review.'})});
+      await notifyAdmins(env,'agents','New agent registered',(out.name||'A new agent')+' (#'+out.partner_code+') registered and is waiting for review.','partners');
       return json({token:await token({id:out.id,role:'partner',exp:Math.floor(Date.now()/1000)+28800},env.IOS_SESSION_SECRET),user:publicPartner(out),role:'partner'});
     }
 
@@ -177,6 +182,18 @@ export async function onRequest(context){
     const can=(m,a)=>!!(P[m]&&P[m][a]);
     const denied=()=>fail('Permission denied — your account does not have access to this action.',403);
     if(path==='auth/session'&&method==='GET')return json({role:s.role,user:currentUser,permissions:currentUser&&currentUser.kind==='user'?{_restricted:true,...P}:null});
+
+    if(path==='notifications'&&method==='GET'){
+      const q=s.role==='partner'?'notifications?partner_id=eq.'+s.id+'&user_type=eq.partner&order=created_at.desc&limit=50':'notifications?user_type=eq.admin&order=created_at.desc&limit=50';
+      const rows=await db(env,q);
+      return json({items:rows,unread:rows.filter(r=>!r.read).length});
+    }
+    if(path==='notifications/read'&&method==='POST'){
+      let b=await body(request);
+      const scope=s.role==='partner'?'notifications?partner_id=eq.'+s.id+'&user_type=eq.partner':'notifications?user_type=eq.admin';
+      await db(env,scope+(b.id?'&id=eq.'+b.id:''),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({read:true})});
+      return json({ok:true});
+    }
 
     if(/^files\/[^/]+$/.test(path)&&method==='GET'){
       const id=path.split('/')[1];
@@ -343,6 +360,8 @@ export async function onRequest(context){
           try{await db(env,`contributions?id=eq.${id}`,{method:'DELETE'})}catch{}
           return fail('Could not save the proof files ('+(e.message||'storage error')+'). Please retry.',500);
         }
+        let [me2]=await db(env,`partners?id=eq.${s.id}&select=name`);
+        await notifyAdmins(env,'contribute','New contribution request',(me2?.name||'An agent')+' submitted '+acquired+' acquired ('+(code||'contribution')+') for review.','contribute');
         return json({...out,files:saved},201);
       }
       if(path==='helpdesk'&&method==='GET'){
@@ -446,6 +465,7 @@ export async function onRequest(context){
         const available=Math.round((income-accepted-pending)*100)/100;
         if(amount>available)return fail(`Withdrawal amount cannot exceed your available balance (${available.toFixed(2)}).`,400);
         const [out]=await db(env,'withdrawals',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_id:s.id,payment_method_id:pm.id,method:pm.method,account_type:pm.account_type||null,account_number:pm.account_number||null,wallet_address:pm.wallet_address||null,amount:Math.round(amount*100)/100,status:'pending'})});
+        await notifyAdmins(env,'withdraw','Withdrawal request',(currentUser.name||'An agent')+' requested $'+(Math.round(amount*100)/100).toFixed(2)+' via '+(pm.method==='crypto_usdt'?'USDT TRC20':pm.method)+' — waiting for your approval.','payments');
         return json(out,201);
       }
       return fail('Not found.',404);
@@ -697,7 +717,7 @@ export async function onRequest(context){
       if(!b.project_id||!b.partner_id)return fail('Project and agent are required.');
       if(!ALLOCATION_STATUSES.includes(b.status))return fail('Invalid allocation status.');
       const category=CATEGORIES.includes(b.category)?b.category:'users';
-      let [project]=await db(env,`projects?id=eq.${b.project_id}&select=id`);
+      let [project]=await db(env,`projects?id=eq.${b.project_id}&select=id,name`);
       let [partner]=await db(env,`partners?id=eq.${b.partner_id}&select=id,status`);
       if(!project)return fail('Project not found.',404);
       if(!partner)return fail('Agent not found.',404);
@@ -705,12 +725,13 @@ export async function onRequest(context){
       let dup=await db(env,`allocations?project_id=eq.${b.project_id}&partner_id=eq.${b.partner_id}&category=eq.${category}&select=id`);
       if(dup.length)return fail('This agent already has an allocation for this project with the “'+category+'” category.',409);
       let [out]=await db(env,'allocations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({project_id:b.project_id,partner_id:b.partner_id,category,assigned_target:Math.max(0,Math.round(num(b.assigned_target))),acquired_users:0,commission:0,start_date:cleanDate(b.start_date),deadline:cleanDate(b.deadline),note:b.note?String(b.note).slice(0,500):null,status:b.status})});
+      await notifyPartner(env,b.partner_id,'allocation','New allocation assigned','You got a new target on project "'+(project.name||'a project')+'" — '+catLabel(category).toLowerCase()+' target '+Number(out.assigned_target||0).toLocaleString()+'.','allocations');
       return json(out,201);
     }
     if(path.startsWith('allocations/')&&(method==='PATCH'||method==='DELETE')){
       if(!can('allocations',method==='PATCH'?'edit':'delete'))return denied();
       let id=path.split('/')[1];
-      if(method==='DELETE'){await db(env,`allocations?id=eq.${id}`,{method:'DELETE'});return json({ok:true})}
+      if(method==='DELETE'){let [gone]=await db(env,`allocations?id=eq.${id}&select=partner_id,project_id`);await db(env,`allocations?id=eq.${id}`,{method:'DELETE'});await notifyPartner(env,gone&&gone.partner_id,'allocation','Allocation removed','One of your allocations was removed by the administrator.','allocations');return json({ok:true})}
       let b=await body(request),patch={updated_at:new Date().toISOString()};
       if(b.assigned_target!==undefined)patch.assigned_target=Math.max(0,Math.round(num(b.assigned_target)));
       if(b.note!==undefined)patch.note=String(b.note).slice(0,500);
@@ -719,6 +740,7 @@ export async function onRequest(context){
       if(b.status!==undefined){if(!ALLOCATION_STATUSES.includes(b.status))return fail('Invalid allocation status.');patch.status=b.status}
       // acquired_users & commission are automated (contributions & payments) and never edited manually
       let [out]=await db(env,`allocations?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
+      await notifyPartner(env,out.partner_id,'allocation','Allocation updated','The administrator updated your allocation'+(patch.assigned_target!==undefined?' — new target '+Number(patch.assigned_target).toLocaleString():'')+'.','allocations');
       return json(out);
     }
 
@@ -739,6 +761,7 @@ export async function onRequest(context){
       let [alloc]=await db(env,`allocations?id=eq.${allocationId}&partner_id=eq.${b.partner_id}&select=*`);
       if(!alloc)return fail('This agent has no allocation for the selected project.',400);
       const [out]=await db(env,'payments',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_id:b.partner_id,project_id:alloc.project_id,payment_date:b.payment_date||new Date().toISOString().slice(0,10),amount:Math.round(amount*100)/100,status:b.status})});
+      await notifyPartner(env,b.partner_id,'payment','New payment added','A payment of $'+(Math.round(amount*100)/100).toFixed(2)+' was added with status "'+b.status+'" for you.','payments');
       // Commission is only added when the payment is PAID (scheduled/pending add nothing).
       if(b.status==='paid')await db(env,`allocations?id=eq.${alloc.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({commission:Math.round((num(alloc.commission)+amount)*100)/100,updated_at:new Date().toISOString()})});
       return json(out,201);
@@ -754,6 +777,7 @@ export async function onRequest(context){
           if(alloc)await db(env,`allocations?id=eq.${alloc.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({commission:Math.max(0,Math.round((num(alloc.commission)-num(existing.amount))*100)/100),updated_at:new Date().toISOString()})});
         }
         await db(env,`payments?id=eq.${id}`,{method:'DELETE'});
+        await notifyPartner(env,existing.partner_id,'payment','Payment deleted','A payment of $'+num(existing.amount).toFixed(2)+' was deleted.','payments');
         return json({ok:true});
       }
       let b=await body(request),patch={updated_at:new Date().toISOString()};
@@ -768,6 +792,7 @@ export async function onRequest(context){
         }
       }
       let [out]=await db(env,`payments?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
+      if(patch.status==='paid'&&existing.status!=='paid')await notifyPartner(env,existing.partner_id,'payment','Payment marked as paid','Your payment of $'+num(existing.amount).toFixed(2)+' is now marked PAID — commission updated.','payments');
       return json(out);
     }
 
@@ -816,6 +841,7 @@ export async function onRequest(context){
         await db(env,`allocations?id=eq.${alloc.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({acquired_users:num(alloc.acquired_users)+c.acquired,updated_at:new Date().toISOString()})});
       }
       const [out]=await db(env,`contributions?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:action==='accept'?'accepted':'rejected',reviewed_at:new Date().toISOString(),reviewed_by:s.id,review_note:b.note?String(b.note).slice(0,500):null,updated_at:new Date().toISOString()})});
+      await notifyPartner(env,c.partner_id,'contribute',action==='accept'?'Contribution accepted':'Contribution rejected',(action==='accept'?'Your contribution of '+c.acquired+' acquired was accepted and added to your allocation.':'Your contribution ('+(c.code||'request')+') was rejected.'+(b.note?' Note: '+String(b.note).slice(0,140):'')),'contribute');
       return json(out);
     }
 
@@ -948,10 +974,12 @@ export async function onRequest(context){
         if(!provider)return fail('Provider number is required.',400);
         if(!trx)return fail('Transaction ID (trx) is required.',400);
         const [out]=await db(env,`withdrawals?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'accepted',provider_number:provider.slice(0,60),trx:trx.slice(0,100),updated_at:new Date().toISOString()})});
+        await notifyPartner(env,w.partner_id,'withdraw','Withdrawal accepted','Your withdrawal of $'+num(w.amount).toFixed(2)+' was accepted. TRX: '+trx,'payments');
         return json(out);
       }
       if(action==='reject'){
         const [out]=await db(env,`withdrawals?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'rejected',reject_reason:b.reason?String(b.reason).slice(0,500):null,updated_at:new Date().toISOString()})});
+        await notifyPartner(env,w.partner_id,'withdraw','Withdrawal rejected','Your withdrawal of $'+num(w.amount).toFixed(2)+' was rejected.'+(b.reason?' Reason: '+String(b.reason).slice(0,140):''),'payments');
         return json(out);
       }
       return fail('action must be accept or reject.');
