@@ -65,6 +65,38 @@ const catLabel=c=>String(c||'users').charAt(0).toUpperCase()+String(c||'users').
 const pill=(map,key)=>{const m=map[key]||[String(key),'gray'];return `<span class="pill ${m[1]}">${m[0]}</span>`};
 const projPill=s=>s==='active'?'<span class="pill green">Active</span>':'<span class="pill gray">Inactive</span>';
 
+/* ═══════════ ADMIN PERMISSIONS (board users; owner always full) ═══════════ */
+const PERM_MODULES={
+  agents:['show','add','edit','delete'],
+  projects:['show','add','edit','delete'],
+  contribute:['show','edit'],
+  allocations:['show','add','edit','delete'],
+  payments:['show','add','edit','delete'],
+  performance:['show'],
+  vaultium:['show','delete','download','view'],
+  connectx:['show','compose','settings','history'],
+  users:['show','add','edit','delete']
+};
+const PERM_LABELS={show:'Show',add:'Add',edit:'Edit',delete:'Delete',download:'Download',view:'View',compose:'Compose',settings:'Settings',history:'History'};
+const MODULE_LABELS={agents:'Agent',projects:'Project',contribute:'Contribute',allocations:'Allocations',payments:'Payments',performance:'Performance',vaultium:'Vaultium',connectx:'ConnectX',users:'User Control'};
+let PERMS=null;                                  // null = owner / unrestricted
+const can=(m,a)=>!PERMS||!!(PERMS[m]&&PERMS[m][a]);
+function permsHtml(p){
+  const get=(m,a)=>!!(p&&p[m]&&p[m][a]);
+  return `<div class="permbox" id="permBox">
+    <div class="permnote">Module access for this board user — the primary administrator always keeps full access. Turning <b>Show</b> off hides that page from their navigation.</div>
+    <div class="permgrid">
+      ${Object.entries(PERM_MODULES).map(([m,acts])=>`<div class="permrow"><b>${MODULE_LABELS[m]}</b><div class="permacts">${acts.map(a=>`<label class="permchk"><input type="checkbox" data-perm="${m}.${a}" ${get(m,a)?'checked':''}>${PERM_LABELS[a]||a}</label>`).join('')}</div></div>`).join('')}
+    </div></div>`;
+}
+const readPermsFrom=ov=>{
+  const out={};
+  ov.querySelectorAll('[data-perm]').forEach(c=>{
+    const [m,a]=c.dataset.perm.split('.');
+    (out[m]=out[m]||{})[a]=c.checked;
+  });
+  return out;
+};
 function save(s){state=s;localStorage.setItem('ios.session',JSON.stringify(s))}
 function logout(){localStorage.removeItem('ios.session');state=null;boot()}
 
@@ -256,11 +288,15 @@ function agentLoginModal(){
 
 /* ═══════════ ADMIN APP ═══════════ */
 let aView='dashboard';
+const NAV_PERM_MODULE={partners:'agents',projects:'projects',contribute:'contribute',allocations:'allocations',payments:'payments',performance:'performance',vaultium:'vaultium',connectx:'connectx',users:'users'};
 function adminApp(){
   document.body.classList.remove('landing-mode');
   document.body.classList.add('dashboard-mode');
   document.title='InfluenceOS — Admin';
-  const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['connectx','✉','ConnectX'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']];
+  PERMS=state?.permissions||null;
+  if(NAV_PERM_MODULE[aView]&&!can(NAV_PERM_MODULE[aView],'show'))aView='dashboard';
+  const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['connectx','✉','ConnectX'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']]
+    .filter(([k])=>!NAV_PERM_MODULE[k]||can(NAV_PERM_MODULE[k],'show'));
   app.innerHTML=`<div class="app">
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>powered by DoxTox</small></div>
@@ -349,7 +385,7 @@ function renderPartnersView(main,partners){
   const list=partners.filter(p=>(!pFilter.type||p.type===pFilter.type)&&(!pFilter.status||p.status===pFilter.status)&&(!pFilter.q||(p.name+' '+p.email+' '+p.partner_code).toLowerCase().includes(pFilter.q.toLowerCase())));
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Agents</h1><p>Manage marketing agents, YouTubers, TikTokers and agencies.</p></div>
-  <div class="actions"><button class="btn dark" id="addPartner">+ Add agent</button></div></div>
+  <div class="actions">${can('agents','add')?'<button class="btn dark" id="addPartner">+ Add agent</button>':''}</div></div>
   <div class="section-box"><div class="toolbar"><h2>Agent directory</h2>
     <div class="filters">
       <input id="pq" placeholder="Search name, email or ID…" value="${esc(pFilter.q)}">
@@ -364,7 +400,7 @@ function renderPartnersView(main,partners){
     <td>${money(p.income)}</td><td>${money(p.paid)}</td><td><b>${money(p.balance)}</b></td>
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.note||'')}">${esc(p.note||'—')}</td>
     <td>${pill(PARTNER_STATUS,p.status)}</td>
-    <td class="actions-cell"><button class="btn small" data-view="${p.id}">View</button><button class="btn small" data-edit="${p.id}">Edit</button><button class="btn small danger" data-del="${p.id}">×</button></td>
+    <td class="actions-cell"><button class="btn small" data-view="${p.id}">View</button>${can('agents','edit')?`<button class="btn small" data-edit="${p.id}">Edit</button>`:''}${can('agents','delete')?`<button class="btn small danger" data-del="${p.id}">×</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="11" class="empty">No partners found.</td></tr>'}</tbody></table></div></div>`;
   $('#addPartner').onclick=()=>partnerModal(null,partners);
   $('#pq').oninput=e=>{pFilter.q=e.target.value;renderPartnersView(main,partners)};
@@ -430,7 +466,7 @@ async function aProjects(main){
 function renderProjectsView(main,projects){
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Projects</h1><p>Track project targets, assigned partners, user acquisition and budget.</p></div>
-  <div class="actions"><button class="btn dark" id="addProject">+ Add project</button></div></div>
+  <div class="actions">${can('projects','add')?'<button class="btn dark" id="addProject">+ Add project</button>':''}</div></div>
   <div class="project-grid">${projects.length?projects.map(p=>`
     <div class="project-card"><div class="detail-head"><div><h3>${esc(p.name)}</h3><p>${esc(p.details||'')}</p></div>${projPill(p.status)}</div>
       <div class="meta"><span>Budget</span><b>${money(p.budget)}</b></div>
@@ -442,7 +478,7 @@ function renderProjectsView(main,projects){
       <div class="meta"><span>Acquired ${catLabel(c.category).toLowerCase()}</span><b>${num(c.acquired).toLocaleString()}</b></div>`).join(''):'<div class="meta"><span>Allocations</span><b>None yet</b></div>'}
       <div class="progress-lg"><i style="width:${pct(num(p.acquired_users),num(p.target_users))}%"></i></div>
       <div class="meta"><span>${pct(num(p.acquired_users),num(p.target_users))}% achieved</span><span>${p.partner_count} agents</span></div>
-      <div style="margin-top:12px;display:flex;gap:6px"><button class="btn small" data-edit="${p.id}">Edit</button><button class="btn small danger" data-del="${p.id}">×</button></div>
+      <div style="margin-top:12px;display:flex;gap:6px">${can('projects','edit')?`<button class="btn small" data-edit="${p.id}">Edit</button>`:''}${can('projects','delete')?`<button class="btn small danger" data-del="${p.id}">×</button>`:''}</div>
     </div>`).join(''):'<div class="empty" style="grid-column:1/-1">No projects yet.</div>'}</div>`;
   $('#addProject').onclick=()=>projectModal(null);
   main.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>projectModal(projects.find(x=>x.id===b.dataset.edit)));
@@ -489,7 +525,7 @@ function renderPaymentsView(main,payments,partners,allocations,withdrawals){
   const wdType=w=>w.method==='crypto_usdt'?'Wallet':w.account_type==='agent'?'Agent number':'Personal number';
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Payments</h1><p>Pick an agent, review their projects &amp; history, then pay — paid amounts add to commission automatically.</p></div>
-  <div class="actions"><button class="btn dark" id="addPay">+ Add payment</button></div></div>
+  <div class="actions">${can('payments','add')?'<button class="btn dark" id="addPay">+ Add payment</button>':''}</div></div>
   <div class="two">
     <div class="section-box" style="margin-top:0"><div class="toolbar"><h2>Payouts</h2><div class="filters"><input id="payq" placeholder="Search agent or project…" value="${esc(payFilterQ)}"></div></div>
     <div style="overflow:auto"><table class="view-table"><thead><tr><th>Payment ID</th><th>Date</th><th>Agent</th><th>Project</th><th>Start</th><th>Deadline</th><th>Amount</th><th>Status</th><th></th></tr></thead>
@@ -498,7 +534,7 @@ function renderPaymentsView(main,payments,partners,allocations,withdrawals){
       <td><div class="partner"><div class="avatar">${esc(initials(p.partner_name))}</div><div><b>${esc(p.partner_name)}</b><small>#${esc(p.partner_code)}</small></div></div></td>
       <td>${esc(p.project_name)}</td><td>${p.start_date?fmtDate(p.start_date):'—'}</td><td>${p.deadline?fmtDate(p.deadline):'—'}</td><td><b>${money(p.amount)}</b></td>
       <td>${pill(PAY_STATUS,p.status)}</td>
-      <td class="actions-cell">${p.status!=='paid'?`<button class="btn small" data-paid="${p.id}">Mark paid</button>`:''}<button class="btn small danger" data-del="${p.id}">×</button></td>
+      <td class="actions-cell">${p.status!=='paid'&&can('payments','edit')?`<button class="btn small" data-paid="${p.id}">Mark paid</button>`:''}${can('payments','delete')?`<button class="btn small danger" data-del="${p.id}">×</button>`:''}</td>
     </tr>`).join(''):'<tr><td colspan="9" class="empty">No payments yet.</td></tr>'}</tbody></table></div></div>
 
     <div class="section-box" style="margin-top:0"><div class="toolbar"><h2>Withdraw requests</h2><span class="muted">${withdrawals.filter(w=>w.status==='pending').length} pending</span></div>
@@ -509,7 +545,7 @@ function renderPaymentsView(main,payments,partners,allocations,withdrawals){
       <td>${wdMethod(w)}</td><td>${wdType(w)}</td><td>${esc(wdDest(w)||'—')}</td><td><b>${money(w.amount)}</b></td>
       <td>${esc(w.provider_number||'—')}</td><td>${esc(w.trx||'—')}</td>
       <td>${pill(WD_STATUS,w.status)}${w.status==='rejected'&&w.reject_reason?`<small class="muted" style="display:block;margin-top:3px">${esc(w.reject_reason)}</small>`:''}</td>
-      <td class="actions-cell">${w.status==='pending'?`<button class="btn small" data-wacc="${w.id}">Accept</button><button class="btn small danger" data-wrej="${w.id}">Reject</button>`:''}</td>
+      <td class="actions-cell">${w.status==='pending'&&can('payments','edit')?`<button class="btn small" data-wacc="${w.id}">Accept</button><button class="btn small danger" data-wrej="${w.id}">Reject</button>`:''}</td>
     </tr>`).join(''):'<tr><td colspan="11" class="empty">No withdrawal requests.</td></tr>'}</tbody></table></div></div>
   </div>`;
   $('#addPay').onclick=()=>paymentModal(partners,allocations,payments);
@@ -624,7 +660,7 @@ function renderAllocationsView(main,allocs,projects,partners,teamAllocs=[]){
   const agree=partners.filter(p=>p.status==='agree');
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Allocations</h1><p>Assign project targets to agents. Acquired &amp; commission fill automatically from contributions and payments.</p></div>
-  <div class="actions"><button class="btn dark" id="addAlloc">+ Add allocation</button></div></div>
+  <div class="actions">${can('allocations','add')?'<button class="btn dark" id="addAlloc">+ Add allocation</button>':''}</div></div>
   <div class="section-box"><div class="toolbar"><h2>Allocation table</h2><div class="filters"><input id="aq" placeholder="Search project or agent…" value="${esc(aFilterQ)}"></div></div>
   <div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Agent</th><th>Start</th><th>Deadline</th><th>Assigned target</th><th>Users acquired <small>(auto)</small></th><th>Commission <small>(auto)</small></th><th>Progress</th><th>Status</th><th></th></tr></thead>
   <tbody>${list.length?list.map(a=>`<tr>
@@ -635,7 +671,7 @@ function renderAllocationsView(main,allocs,projects,partners,teamAllocs=[]){
     <td>${num(a.assigned_target).toLocaleString()}</td><td><b>${num(a.acquired_users).toLocaleString()}</b></td><td>${money(a.commission)}</td>
     <td style="min-width:120px"><div style="font-size:10px;margin-bottom:4px">${pct(num(a.acquired_users),num(a.assigned_target))}%</div><div class="progress"><i style="width:${pct(num(a.acquired_users),num(a.assigned_target))}%"></i></div></td>
     <td>${pill(ALLOC_STATUS,a.status)}</td>
-    <td class="actions-cell"><button class="btn small" data-edit="${a.id}">Edit</button><button class="btn small danger" data-del="${a.id}">×</button></td>
+    <td class="actions-cell">${can('allocations','edit')?`<button class="btn small" data-edit="${a.id}">Edit</button>`:''}${can('allocations','delete')?`<button class="btn small danger" data-del="${a.id}">×</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="11" class="empty">No allocations yet.</td></tr>'}</tbody></table></div></div>
   <div class="section-box"><div class="toolbar"><h2>Agent team allocations</h2><span class="muted">How agents split their targets among their team members</span></div>
   <div style="overflow:auto"><table class="view-table"><thead><tr><th>Project</th><th>Category</th><th>Agent</th><th>Team member</th><th>Assigned target</th><th>Acquired</th><th>Status</th></tr></thead>
@@ -705,7 +741,7 @@ function renderAContribute(main,rows){
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.note||'')}">${esc(c.note||'—')}</td>
     <td>${pill(CONTRIB_STATUS,c.status)}</td>
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.review_note||'')}">${c.reviewed_at?esc(c.review_note||'—'):'—'}</td>
-    <td class="actions-cell">${c.status==='pending'?`<button class="btn small" data-accept="${c.id}" data-n="${num(c.acquired)}">Accept</button><button class="btn small danger" data-reject="${c.id}">Reject</button>`:''}</td>
+    <td class="actions-cell">${c.status==='pending'&&can('contribute','edit')?`<button class="btn small" data-accept="${c.id}" data-n="${num(c.acquired)}">Accept</button><button class="btn small danger" data-reject="${c.id}">Reject</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="13" class="empty">No contribution requests yet.</td></tr>'}</tbody></table></div></div>`;
   main.querySelectorAll('[data-files]').forEach(b=>b.onclick=()=>filesModal(JSON.parse(b.dataset.files)));
   main.querySelectorAll('[data-accept]').forEach(b=>b.onclick=async()=>{
@@ -788,7 +824,7 @@ function renderVaultium(main,rows){
     <td><b>${esc(f.contribution_code||'—')}</b></td>
     <td><div class="partner"><div class="avatar">${esc(initials(f.partner_name))}</div><div><b>${esc(f.partner_name)}</b><small>#${esc(f.partner_code)}</small></div></div></td>
     <td>${esc(f.project_name)}</td>
-    <td class="actions-cell"><button class="btn small" data-vopen="${f.id}" data-vname="${esc(f.file_name)}">View</button><button class="btn small" data-vdl="${f.id}" data-vdlname="${esc(f.file_name)}">Download</button><button class="btn small danger" data-vdel="${f.id}">×</button></td>
+    <td class="actions-cell">${can('vaultium','view')?`<button class="btn small" data-vopen="${f.id}" data-vname="${esc(f.file_name)}">View</button>`:''}${can('vaultium','download')?`<button class="btn small" data-vdl="${f.id}" data-vdlname="${esc(f.file_name)}">Download</button>`:''}${can('vaultium','delete')?`<button class="btn small danger" data-vdel="${f.id}">×</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="8" class="empty">No files stored yet.</td></tr>'}</tbody></table></div></div>`;
   main.querySelectorAll('[data-vopen]').forEach(b=>b.onclick=()=>openFile(b.dataset.vopen,b.dataset.vname,false));
   main.querySelectorAll('[data-vdl]').forEach(b=>b.onclick=()=>openFile(b.dataset.dl,b.dataset.dlname,true));
@@ -887,14 +923,17 @@ async function aConnectX(main){
 }
 function cxStatus(s){return `<span class="cxstatus ${esc(s||'queued')}">${esc(s||'queued')}</span>`}
 function renderConnectX(main,contacts,history,settings){
+  if(cxView==='compose'&&!can('connectx','compose'))cxView=can('connectx','history')?'history':'settings';
+  if(cxView==='history'&&!can('connectx','history'))cxView='compose';
+  if(cxView==='settings'&&!can('connectx','settings'))cxView='compose';
   main.innerHTML=`
   <div class="top"><div class="title"><h1>ConnectX</h1><p>Central mail communication system powered by DoxTox.</p></div></div>
   <div class="connectx">
     <aside class="connectxnav">
       <div class="connectxbrand">✉ ConnectX<small>powered by DoxTox</small></div>
-      <button class="${cxView==='compose'?'on':''}" data-cx="compose">Compose</button>
-      <button class="${cxView==='history'?'on':''}" data-cx="history">History <small>${history.length}</small></button>
-      <button class="${cxView==='settings'?'on':''}" data-cx="settings">Settings</button>
+      ${can('connectx','compose')?`<button class="${cxView==='compose'?'on':''}" data-cx="compose">Compose</button>`:''}
+      ${can('connectx','history')?`<button class="${cxView==='history'?'on':''}" data-cx="history">History <small>${history.length}</small></button>`:''}
+      ${can('connectx','settings')?`<button class="${cxView==='settings'?'on':''}" data-cx="settings">Settings</button>`:''}
     </aside>
     <section class="connectxmain">${cxView==='compose'?connectXCompose(contacts):cxView==='history'?connectXHistory(history):connectXSettings(settings)}</section>
   </div>`;
@@ -921,7 +960,7 @@ function connectXCompose(contacts){
       <div id="cxAttachBox" class="cxattachbox" style="display:${cxAttachment?'flex':'none'}">${cxAttachment?`<span><b>${esc(cxAttachment.type)}</b> — ${esc(cxAttachment.title)}</span><button class="btn small danger" id="cxClearAttach" type="button">Remove</button>`:''}</div>
       <label>Subject<input id="cxSubject" placeholder="Subject"></label>
       <label>Message<textarea id="cxBody" rows="9" placeholder="Write your message…"></textarea></label>
-      <button class="btn dark" id="cxSend">Send email</button>
+      ${can('connectx','compose')?'<button class="btn dark" id="cxSend">Send email</button>':''}
     </div>
   </div>`;
 }
@@ -1044,14 +1083,14 @@ async function aUserControl(main){
 function renderUserControl(main,users){
   main.innerHTML=`
   <div class="top"><div class="title"><h1>User Control</h1><p>Confirm user account requests and manage admin board users.</p></div>
-  <div class="actions"><button class="btn dark" id="addUser">+ Add user</button></div></div>
+  <div class="actions">${can('users','add')?'<button class="btn dark" id="addUser">+ Add user</button>':''}</div></div>
   <div class="section-box"><div class="toolbar"><h2>Board users</h2><span class="muted">${users.filter(u=>u.status==='pending').length} pending request(s)</span></div>
   <div style="overflow:auto"><table class="view-table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
   <tbody>${users.length?users.map(u=>`<tr>
     <td><div class="partner"><div class="avatar">${esc(initials(u.name))}</div><div><b>${esc(u.name)}</b><small>${u.status==='pending'?'Requested to join board':'Board user'}</small></div></div></td>
     <td>${esc(u.email)}</td><td>${esc(u.phone||'—')}</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(u.address||'')}">${esc(u.address||'—')}</td>
     <td>${pill(USER_STATUS,u.status)}</td><td>${fmtDate(u.created_at)}</td>
-    <td class="actions-cell">${u.status==='pending'?`<button class="btn small" data-approve="${u.id}">Confirm</button>`:''}<button class="btn small" data-edit-user="${u.id}">Edit</button><button class="btn small danger" data-del-user="${u.id}">×</button></td>
+    <td class="actions-cell">${u.status==='pending'&&can('users','edit')?`<button class="btn small" data-approve="${u.id}">Confirm</button>`:''}${can('users','edit')?`<button class="btn small" data-edit-user="${u.id}">Edit</button>`:''}${can('users','delete')?`<button class="btn small danger" data-del-user="${u.id}">×</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="7" class="empty">No users yet.</td></tr>'}</tbody></table></div></div>`;
   $('#addUser').onclick=()=>userControlModal(null);
   main.querySelectorAll('[data-approve]').forEach(b=>b.onclick=async()=>{try{await mutate('admin/users/'+b.dataset.approve,{method:'PATCH',body:JSON.stringify({status:'active'})});toast('User confirmed.');renderAdmin()}catch(e){toast(e.message)}});
@@ -1067,10 +1106,12 @@ function userControlModal(u){
     <div class="field"><label>Address</label><input id="ucAddress" value="${esc(u?.address||'')}"></div>
     <div class="field"><label>${u?'Change password':'Password'}</label><input id="ucPass" type="password" placeholder="Minimum 6 characters"></div>
     <div class="field"><label>Active / Deactive</label><select id="ucStatus"><option value="active" ${u?.status==='active'?'selected':''}>Active</option><option value="inactive" ${u?.status==='inactive'?'selected':''}>Deactive</option><option value="pending" ${u?.status==='pending'?'selected':''}>Pending request</option></select></div>
+    <div class="field"><label>Permissions <small>· what this board user can access</small></label>${permsHtml(u?.permissions)}</div>
     <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn dark" id="ucSave">${u?'Save changes':'Add user'}</button></div>`);
+  if(state?.user?.kind==='user'){const box=ov.querySelector('#permBox');if(box){box.classList.add('locked');box.querySelectorAll('input').forEach(i=>i.disabled=true);box.querySelector('.permnote').innerHTML='Only the primary administrator can change permissions.';}}
   ov.querySelector('#ucSave').onclick=async()=>{
     const btn=ov.querySelector('#ucSave');btn.disabled=true;btn.textContent='Saving…';
-    const payload={name:ov.querySelector('#ucName').value,email:ov.querySelector('#ucEmail').value,phone:ov.querySelector('#ucPhone').value,address:ov.querySelector('#ucAddress').value,password:ov.querySelector('#ucPass').value||undefined,status:ov.querySelector('#ucStatus').value};
+    const payload={name:ov.querySelector('#ucName').value,email:ov.querySelector('#ucEmail').value,phone:ov.querySelector('#ucPhone').value,address:ov.querySelector('#ucAddress').value,password:ov.querySelector('#ucPass').value||undefined,status:ov.querySelector('#ucStatus').value,permissions:readPermsFrom(ov)};
     try{
       if(u)await mutate('admin/users/'+u.id,{method:'PATCH',body:JSON.stringify(payload)});
       else await mutate('admin/users',{method:'POST',body:JSON.stringify(payload)});
@@ -1558,7 +1599,7 @@ async function boot(){
     app.innerHTML=loaderHtml('Connecting to database…');
     try{
       const fresh=await api('auth/session');
-      save({token:state.token,role:fresh.role,user:fresh.user});
+      save({token:state.token,role:fresh.role,user:fresh.user,permissions:fresh.permissions||null});
       if(state.role==='admin')return adminApp();
       if(state.role==='partner')return partnerApp();
     }catch(e){
