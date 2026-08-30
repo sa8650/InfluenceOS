@@ -160,7 +160,7 @@ function landing(){
   <header class="land-head"><div class="in">
     <div class="logo" style="padding:0">Influence<span>OS</span><small>powered by DoxTox</small></div>
     <nav class="land-nav">
-      <a href="#features">Features</a><a href="#workflow">Workflow</a><a href="#roles">Roles</a>
+      <a href="#features">Features</a><a href="#network">Network</a><a href="#workflow">Workflow</a><a href="#roles">Roles</a>
       <button class="btn dark" id="loginBtn">Login</button>
     </nav>
   </div></header>
@@ -203,6 +203,43 @@ function landing(){
       <div class="feat"><div class="fi">◫</div><h3>Performance analytics</h3><p>Achievement percentages, rankings and project-wise breakdowns are computed automatically from approved contributions.</p></div>
       <div class="feat"><div class="fi">$</div><h3>Payouts &amp; withdrawals</h3><p>Commissions build up as payments are marked paid; agents withdraw to bKash, Nagad or USDT with admin approval, provider numbers and transaction IDs.</p></div>
     </div>
+  </section>
+
+  <section class="land-section" id="network" style="padding-top:10px">
+    <h2>Where brands and influencers grow together</h2>
+    <p class="sub">DoxTox sits in the middle — connecting brands with the right YouTube, TikTok and Facebook creators, then running the whole campaign: briefs, content, tracking and payouts.</p>
+    <div class="net-stage">
+      <svg class="net-svg" viewBox="0 0 1000 460" preserveAspectRatio="none" aria-hidden="true">
+        <path class="glow" d="M350 146 C 400 146, 410 196, 446 208"/>
+        <path d="M350 230 C 395 230, 400 230, 440 230"/>
+        <path class="glow" d="M350 314 C 400 314, 410 264, 446 252"/>
+        <path class="glow" d="M554 208 C 594 196, 600 146, 650 146"/>
+        <path d="M560 230 C 600 230, 605 230, 650 230"/>
+        <path class="glow" d="M554 252 C 594 264, 600 314, 650 314"/>
+        <path class="cross" d="M350 146 C 520 70, 480 390, 650 314"/>
+        <path class="cross" d="M350 314 C 480 390, 520 70, 650 146"/>
+      </svg>
+      <div class="net-col net-brands">
+        <div class="net-card"><div class="net-ico">✦</div><div><div class="net-name">GlowUp</div><div class="net-sub">beauty &amp; skincare</div></div></div>
+        <div class="net-card"><div class="net-ico">⬡</div><div><div class="net-name">NovaTech</div><div class="net-sub">gadgets &amp; accessories</div></div></div>
+        <div class="net-card"><div class="net-ico">▲</div><div><div class="net-name">UrbanFits</div><div class="net-sub">fashion &amp; lifestyle</div></div></div>
+      </div>
+      <div class="net-center">
+        <div class="net-orb">
+          <span class="net-badge">✦ platform</span>
+          <b>Dox<span>Tox</span></b>
+          <i>connect brands · grow together</i>
+        </div>
+        <p class="net-under">campaigns · content · payouts</p>
+      </div>
+      <div class="net-col net-socials">
+        <div class="net-card"><div class="net-ico" style="color:#e0281e"><svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.3 31.3 0 0 0 0 12a31.3 31.3 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.3 31.3 0 0 0 24 12a31.3 31.3 0 0 0-.5-5.8zM9.5 15.5v-7l6.3 3.5-6.3 3.5z"/></svg></div><div><div class="net-name">YouTube</div><div class="net-sub">@arifhasanbd</div><div class="net-stat">1.24M subscribers</div></div></div>
+        <div class="net-card"><div class="net-ico" style="color:#1877f2"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 21.5v-7.2h2.4l.4-2.9h-2.8V9.6c0-.8.2-1.4 1.4-1.4h1.5V5.6c-.3 0-1.2-.1-2.2-.1-2.2 0-3.6 1.3-3.6 3.7v2.2H8.2v2.9h2.4v7.2h2.9z"/></svg></div><div><div class="net-name">Facebook</div><div class="net-sub">@shakib.rahman</div><div class="net-stat">2.1M followers</div></div></div>
+        <div class="net-card"><div class="net-ico" style="color:#111111"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 3c.4 2.2 1.9 3.9 4.1 4.2v3.2c-1.5 0-2.9-.5-4.1-1.3v6.6a5.9 5.9 0 1 1-5.9-5.9c.3 0 .7 0 1 .1v3.3a2.7 2.7 0 1 0 1.9 2.5V3h3z"/></svg></div><div><div class="net-name">TikTok</div><div class="net-sub">@mim.vibes</div><div class="net-stat">3.8M followers</div></div></div>
+      </div>
+    </div>
+    <div class="net-tagline">brands &nbsp;⟷&nbsp; doxtox &nbsp;⟷&nbsp; influencers</div>
+    <div class="net-stats"><span>7.1M+ combined creator reach</span><span>YouTube · TikTok · Facebook</span><span>Campaign → content → payout</span><span>Grow together</span></div>
   </section>
 
   <section class="land-section" id="workflow" style="padding-top:10px">
