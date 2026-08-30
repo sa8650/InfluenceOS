@@ -154,6 +154,7 @@ function modal(html,cls=''){
 function landing(){
   document.body.classList.add('landing-mode');
   document.body.classList.remove('dashboard-mode');
+  document.body.classList.remove('partner-mode');
   document.title='InfluenceOS | DoxTox';
   app.innerHTML=`
   <header class="land-head"><div class="in">
@@ -331,6 +332,7 @@ let aView='dashboard';
 const NAV_PERM_MODULE={partners:'agents',projects:'projects',contribute:'contribute',allocations:'allocations',payments:'payments',performance:'performance',vaultium:'vaultium',connectx:'connectx',users:'users'};
 function adminApp(){
   document.body.classList.remove('landing-mode');
+  document.body.classList.remove('partner-mode');
   document.body.classList.add('dashboard-mode');
   document.title='InfluenceOS — Admin';
   PERMS=state?.permissions||null;
@@ -1180,6 +1182,7 @@ let pView='profile';
 function partnerApp(){
   document.body.classList.remove('landing-mode');
   document.body.classList.add('dashboard-mode');
+  document.body.classList.add('partner-mode');
   document.title='InfluenceOS — Agent';
   const nav=[['profile','◉','Profile'],['team','☰','My Team'],['allocations','◌','Allocations'],['contribute','⇧','Contribute'],['projects','◆','Projects'],['payments','$','Payments'],['performance','◫','Performance'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
   app.innerHTML=`<div class="app">
