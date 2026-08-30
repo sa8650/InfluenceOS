@@ -521,3 +521,35 @@ body.dashboard-mode .chat .loader-wrap{min-height:120px;background:transparent;b
 .notifrow{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .notifdot{width:9px;height:9px;border-radius:50%;background:#2563eb;flex:0 0 auto}
 #notifList{max-height:52vh;overflow:auto;margin:10px 0}
+
+/* ---------- LANDING: BRANDS ↔ DOXTOX ↔ INFLUENCERS NETWORK ---------- */
+.net-stage{position:relative;display:flex;align-items:center;gap:20px;min-height:470px;margin-top:6px}
+.net-svg{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+.net-svg path{fill:none;stroke:rgba(0,0,0,.15);stroke-width:2;stroke-linecap:round;stroke-dasharray:8 6;animation:net-flow 2s linear infinite}
+.net-svg path.glow{stroke:rgba(0,0,0,.32);stroke-width:2.6;stroke-dasharray:4 8;animation:net-flow 1.8s linear infinite reverse}
+.net-svg path.cross{stroke:rgba(0,0,0,.07);stroke-width:1;stroke-dasharray:3 9}
+@keyframes net-flow{to{stroke-dashoffset:-14}}
+.net-col{position:relative;z-index:1;display:flex;flex-direction:column;justify-content:center;gap:18px;flex:1;min-width:0}
+.net-brands{align-items:flex-end}
+.net-socials{align-items:flex-start}
+.net-card{display:flex;align-items:center;gap:13px;padding:13px 18px;border-radius:16px;background:#f1f1f1;box-shadow:8px 8px 18px rgba(0,0,0,.12),-8px -8px 18px rgba(255,255,255,.95);transition:transform .2s ease,box-shadow .2s ease}
+.net-card:hover{box-shadow:11px 11px 24px rgba(0,0,0,.15),-11px -11px 24px rgba(255,255,255,1)}
+.net-brands .net-card:hover{transform:translateX(-4px)}
+.net-socials .net-card:hover{transform:translateX(4px)}
+.net-ico{width:40px;height:40px;flex:0 0 auto;border-radius:13px;display:grid;place-items:center;font-size:16px;font-weight:800;color:#111;background:#ececec;box-shadow:inset 4px 4px 8px rgba(0,0,0,.12),inset -4px -4px 8px rgba(255,255,255,.95)}
+.net-ico svg{display:block}
+.net-name{font-size:13.5px;font-weight:700;color:#111;letter-spacing:-.2px}
+.net-sub{font-size:9.5px;color:#999;letter-spacing:.1em;text-transform:uppercase;margin-top:2px}
+.net-stat{font-size:10.5px;color:#777;margin-top:2px;font-weight:600}
+.net-center{position:relative;z-index:1;flex:0 0 230px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.net-orb{position:relative;width:212px;height:212px;border-radius:50%;background:#f1f1f1;display:grid;place-content:center;justify-items:center;box-shadow:16px 16px 40px rgba(0,0,0,.15),-16px -16px 40px rgba(255,255,255,.98)}
+.net-orb::before{content:"";position:absolute;inset:13px;border-radius:50%;box-shadow:inset 4px 4px 10px rgba(0,0,0,.08),inset -4px -4px 10px rgba(255,255,255,.9)}
+.net-orb b{font-size:33px;font-weight:800;letter-spacing:-1.2px;color:#111}
+.net-orb b span{color:#8a8a8a}
+.net-orb i{font-style:normal;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:#888;margin-top:7px}
+.net-badge{position:absolute;top:-11px;left:50%;transform:translateX(-50%);z-index:2;font-size:9px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#111;padding:5px 13px;border-radius:999px;background:#f1f1f1;box-shadow:inset 3px 3px 6px rgba(0,0,0,.10),inset -3px -3px 6px rgba(255,255,255,.95)}
+.net-under{margin-top:14px;font-size:11px;color:#999}
+.net-tagline{margin-top:10px;text-align:center;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:#999}
+.net-stats{display:flex;justify-content:center;gap:13px;margin-top:18px;flex-wrap:wrap}
+.net-stats span{font-size:11px;color:#555;font-weight:600;padding:9px 16px;border-radius:999px;background:#f1f1f1;box-shadow:inset 4px 4px 9px rgba(0,0,0,.10),inset -4px -4px 9px rgba(255,255,255,.95)}
+@media(max-width:1020px){.net-stage{flex-direction:column;min-height:0;gap:28px}.net-svg{display:none}.net-col{flex:1 1 100%;flex-direction:row!important;flex-wrap:wrap;justify-content:center;align-items:stretch;gap:10px}.net-card{min-width:150px}}
