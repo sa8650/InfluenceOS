@@ -999,18 +999,19 @@ function renderHelpdeskPanel(main,d){
   const threads=d.threads||[], selected=threads.find(t=>hdSelected&&t.kind===hdSelected.kind&&t.id===hdSelected.id);
   main.innerHTML=`
   <div class="top"><div class="title"><h1>HelpDesk</h1><p>${d.mode==='user'?'Chat with the primary administrator.':'Chat with agents and admin-board users.'}</p></div></div>
-  <div class="helpdesk2">
+  <div class="helpdesk2 hd3">
     <aside class="hdlist">
       ${threads.length?threads.map(t=>`<div class="hditem ${hdSelected&&hdSelected.kind===t.kind&&hdSelected.id===t.id?'on':''}" data-hdkind="${t.kind}" data-hdid="${t.id}">
-        <div class="mini">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${esc((t.last||'').slice(0,70))} · ${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
+        <div class="mini">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${esc((t.last||'').slice(0,34))} · ${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
       </div>`).join(''):'<div class="empty">No conversations yet.</div>'}
     </aside>
     <section class="hdconversation">
       ${selected?`<div class="hdconvhead"><div><h2>${esc(selected.name)}</h2><p>${selected.kind==='agent'?'Agent #'+esc(selected.code):d.mode==='user'?'Primary administrator':'Board user · '+esc(selected.code||'')}</p></div></div><div class="chat big" id="hdLog">${loaderHtml('Loading conversation…')}</div><div class="chatbar"><input id="hdInput" placeholder="Write a message…"><button class="btn dark" id="hdSend">Send</button></div>`:'<div class="empty">Select a conversation from the left.</div>'}
     </section>
+    <aside class="hddet" id="hdDet">${loaderHtml('Loading…')}</aside>
   </div>`;
   main.querySelectorAll('[data-hdid]').forEach(el=>el.onclick=()=>{hdSelected={kind:el.dataset.hdkind,id:el.dataset.hdid};renderHelpdeskPanel(main,d);loadHelpdeskConversation()});
-  if(selected)loadHelpdeskConversation();
+  if(selected){loadHelpdeskConversation();loadHelpdeskDetails(selected)}
 }
 async function loadHelpdeskConversation(){
   if(!hdSelected)return;
@@ -1027,6 +1028,41 @@ async function loadHelpdeskConversation(){
     const send=async()=>{const input=$('#hdInput'),text=input.value.trim();if(!text)return;try{input.value='';await mutate(`helpdesk/${hdSelected.kind}/${hdSelected.id}`,{method:'POST',body:JSON.stringify({body:text})});await loadHelpdeskConversation()}catch(e){toast(e.message)}};
     $('#hdSend').onclick=send;$('#hdInput').onkeydown=e=>{if(e.key==='Enter')send()};
   }catch(e){log.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
+}
+async function loadHelpdeskDetails(sel){
+  const box=$('#hdDet');if(!box)return;
+  if(!sel){box.innerHTML='<div class="hdmini"><p class="muted" style="font-size:11px;margin:0">Select a conversation to see details.</p></div>';return}
+  if(sel.kind!=='agent'){
+    box.innerHTML=`<div class="hddet-head"><div class="mini">${esc(initials(sel.name))}</div><div><b>${esc(sel.name)}</b><small>${sel.kind==='user'?'Board user · '+esc(sel.code||'—'):'User'}</small></div></div>
+    <div class="hdmini"><p class="muted" style="font-size:11px;margin:0;line-height:1.6">Board users have no campaign data. Operational tables (allocations, contributions, payments, withdrawals) exist for agents only.</p></div>`;
+    return;
+  }
+  box.innerHTML=loaderHtml('Loading details…');
+  const [pR,aR,cR,payR,wR]=await Promise.allSettled([api('partners'),api('allocations'),api('contributions'),api('payments'),api('withdrawals')]);
+  if(aView!=='helpdesk'||!hdSelected||String(hdSelected.id)!==String(sel.id))return;
+  const ok=r=>r.status==='fulfilled'?r.value:null;
+  const mine=rows=>(rows||[]).filter(x=>String(x.partner_id)===String(sel.id));
+  const partner=ok(pR)?.find(x=>String(x.id)===String(sel.id))||null;
+  const allocs=mine(ok(aR)),contribs=mine(ok(cR)),pays=mine(ok(payR)),wds=mine(ok(wR));
+  const noaccess=txt=>`<p class="muted" style="font-size:10.5px;margin:0">${txt}</p>`;
+  const sect=(title,n,inner)=>`<div class="hdmini"><h3>${title}${n?` <i>${n}</i>`:''}</h3>${inner}</div>`;
+  const tbl=(head,rows)=>`<div style="overflow:auto"><table class="hdmini-t"><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  box.innerHTML=`
+  <div class="hddet-head"><div class="mini">${esc(initials(sel.name))}</div><div><b>${esc(partner?.name||sel.name)}</b><small>Agent #${esc(partner?.partner_code||sel.code||'—')}</small></div>${partner?pill(PARTNER_STATUS,partner.status):''}</div>
+  ${partner?`<div class="hdmini"><h3>Profile</h3><div class="kv hdkv">
+    <span>Type</span><b>${TYPE_LABELS[partner.type]||partner.type||'—'}</b>
+    <span>Followers</span><b>${(num(partner.followers)||0).toLocaleString()}</b>
+    <span>Email</span><b>${esc(partner.email||'—')}</b>
+    <span>Phone</span><b>${esc(partner.phone||'—')}</b>
+    <span>Address</span><b>${esc(partner.address||'—')}</b>
+    <span>Joined</span><b>${partner.created_at?fmtDate(partner.created_at):'—'}</b>
+    <span>Income · Paid</span><b>${money(partner.income)} · ${money(partner.paid)}</b>
+    <span>Balance</span><b>${money(partner.balance)}</b>
+  </div></div>`:sect('Profile',0,noaccess('Profile unavailable — no Agents permission.'))}
+  ${sect('Allocations',allocs.length,ok(aR)?tbl(['Project','Cat','Target','Acq','%','Status'],allocs.length?allocs.map(a=>`<tr><td><b>${esc(a.project_name)}</b></td><td>${catLabel(a.category)}</td><td>${num(a.assigned).toLocaleString()}</td><td>${num(a.acquired).toLocaleString()}</td><td>${a.pct??pct(num(a.acquired),num(a.assigned))}%</td><td>${pill(ALLOC_STATUS,a.status)}</td></tr>`).join(''):`<tr><td colspan="6" class="empty">None yet.</td></tr>`):noaccess('No Allocations permission.'))}
+  ${sect('Contributions',contribs.length,ok(cR)?tbl(['Date','Project','Acq','Status'],contribs.length?contribs.slice().reverse().map(c=>`<tr><td>${fmtDate(c.created_at)}</td><td><b>${esc(c.project_name)}</b></td><td>+${num(c.acquired).toLocaleString()}</td><td>${pill(CONTRIB_STATUS,c.status)}</td></tr>`).join(''):`<tr><td colspan="4" class="empty">None yet.</td></tr>`):noaccess('No Contribute permission.'))}
+  ${sect('Payments',pays.length,ok(payR)?tbl(['Date','Project','Amount','Status'],pays.length?pays.map(pm=>`<tr><td>${fmtDate(pm.payment_date)}</td><td><b>${esc(pm.project_name)}</b></td><td><b>${money(pm.amount)}</b></td><td>${pill(PAY_STATUS,pm.status)}</td></tr>`).join(''):`<tr><td colspan="4" class="empty">None yet.</td></tr>`):noaccess('No Payments permission.'))}
+  ${sect('Withdrawals',wds.length,ok(wR)?tbl(['Date','Method','Amount','Status'],wds.length?wds.slice().reverse().map(w=>`<tr><td>${fmtDate(w.created_at)}</td><td>${w.method==='bkash'?'bKash':w.method==='nagad'?'Nagad':'USDT'}</td><td><b>${money(w.amount)}</b></td><td>${pill(WD_STATUS,w.status)}</td></tr>`).join(''):`<tr><td colspan="4" class="empty">None yet.</td></tr>`):noaccess('No Payments permission.'))}`;
 }
 function updateHdBadge(n){
   const b=$('#hdBadge');
