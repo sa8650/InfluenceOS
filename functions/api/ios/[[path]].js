@@ -607,6 +607,9 @@ export async function onRequest(context){
       const allRow={agents:partners.length,followers:0,allocations:allocs.length,assigned,acquired};
       for(const t in byType)allRow.followers+=byType[t].followers;
       byType.all=allRow;
+      const byCat={};
+      for(const a of allocs){const c=a.category||'users';const s=byCat[c]??={acquired:0,assigned:0,allocations:0};s.acquired+=num(a.acquired_users);s.assigned+=num(a.assigned_target);s.allocations++;}
+      byCat.all={acquired,assigned,allocations:allocs.length};
       return json({
         kpis:{
           totalPartners:partners.length,
@@ -617,7 +620,8 @@ export async function onRequest(context){
           totalPaid:Math.round(wdPaid*100)/100,
           remainingBalance:Math.round((income-wdPaid-wdLocked)*100)/100,
           overallPerformance:assigned>0?Math.round(acquired/assigned*100):0,
-          byType
+          byType,
+          byCat
         },
         contributions:allocs.map(a=>allocToRow(a,projectMap,partnerMap)),
         projects:projects.map(p=>({id:p.id,name:p.name,status:p.status,target:allocs.filter(a=>a.project_id===p.id).reduce((x,a)=>x+num(a.assigned_target),0),acquired:allocs.filter(a=>a.project_id===p.id).reduce((x,a)=>x+num(a.acquired_users),0),partners:new Set(allocs.filter(a=>a.project_id===p.id).map(a=>a.partner_id)).size})),
