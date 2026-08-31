@@ -30,6 +30,45 @@ const pct=(a,b)=>b>0?Math.min(999,Math.round(a/b*100)):0;
 const fmtDate=d=>String(d||'').slice(0,10);
 const fmtDT=d=>{const x=new Date(d);return isNaN(x)?String(d||''):x.toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 const fmtSize=b=>{const n=Number(b)||0;return n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B'};
+const _fvScripts={};
+const loadScript=src=>_fvScripts[src]??=new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(Error('Viewer library could not be loaded.'));document.head.append(s)});
+const blobText=blob=>new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(String(fr.result));fr.onerror=()=>rej(fr.error||Error('Could not read file'));fr.readAsText(blob)});
+const blobBuf=blob=>new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(fr.error||Error('Could not read file'));fr.readAsArrayBuffer(blob)});
+const fvFallback=(name,msg)=>`<div class="fv-fallback"><div class="fv-ico">📄</div><p><b>${esc(name||'File')}</b><br>${esc(msg||'No inline preview for this format — use Download to open it.')}</p></div>`;
+async function fileViewModal(id,name){
+  const ov=modal(`<h2 style="word-break:break-all">${esc(name||'File')}</h2><div class="fv-body" id="fvBody">${loaderHtml('Loading file…')}</div>
+  <div class="modal-actions"><button class="btn" data-close>Close</button><button class="btn dark" id="fvDl">Download</button></div>`,'fileview');
+  const body=ov.querySelector('#fvBody');
+  const ext=String(name||'').split('.').pop().toLowerCase();
+  try{
+    const r=await fetch('/api/ios/files/'+id,{cache:'no-store',headers:{'cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{})}});
+    if(!r.ok){const x=await r.json().catch(()=>({}));throw Error(x.error||'Could not open file')}
+    const blob=await r.blob();const url=URL.createObjectURL(blob);
+    new MutationObserver((_,mo)=>{if(!document.body.contains(ov)){mo.disconnect();URL.revokeObjectURL(url)}}).observe(document.body,{childList:true});
+    ov.querySelector('#fvDl').onclick=()=>{const a=document.createElement('a');a.href=url;a.download=name||'file';document.body.append(a);a.click();a.remove()};
+    const ct=String(blob.type||'');
+    if(/^image\//.test(ct)||['png','jpg','jpeg','webp','gif','bmp','svg'].includes(ext)){
+      body.innerHTML=`<div class="fv-imgbox"><img src="${url}" alt="${esc(name)}"></div>`;
+    }else if(ct==='application/pdf'||ext==='pdf'){
+      body.innerHTML=`<iframe class="fv-pdf" src="${url}" title="${esc(name)}"></iframe>`;
+    }else if(['txt','csv','json','log','md'].includes(ext)||ct.startsWith('text/')){
+      body.innerHTML=`<pre class="fv-pre">${esc(await blobText(blob))}</pre>`;
+    }else if(ext==='docx'){
+      try{
+        await loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js');
+        const out=await window.mammoth.convertToHtml({arrayBuffer:await blobBuf(blob)});
+        body.innerHTML=`<div class="fv-doc">${out.value||'<p>(empty document)</p>'}</div>`;
+      }catch(err){body.innerHTML=fvFallback(name)}
+    }else if(ext==='xlsx'||ext==='xls'){
+      try{
+        await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+        const wb=XLSX.read(await blobBuf(blob),{type:'array'});
+        const sheet=wb.Sheets[wb.SheetNames[0]];
+        body.innerHTML=`<div class="fv-sheet"><b>${esc(wb.SheetNames[0]||'Sheet')}</b>${XLSX.utils.sheet_to_html(sheet)}</div>`;
+      }catch(err){body.innerHTML=fvFallback(name)}
+    }else body.innerHTML=fvFallback(name);
+  }catch(e){body.innerHTML=fvFallback(name,e.message)}
+}
 const openFile=async(id,name,download)=>{
   try{
     const r=await fetch('/api/ios/files/'+id,{cache:'no-store',headers:{'cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{})}});
@@ -48,7 +87,7 @@ function filesModal(files){
   const ov=modal(`<h2>Proof files (${files.length})</h2><p>Click a file to open it in a new tab.</p>
   ${files.map(f=>`<div class="target-row"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.n)}</b><span>${fmtSize(f.s)}</span>${can('vaultium','view')?`<button class="btn small" data-view="${f.id}" data-name="${esc(f.n)}">View</button>`:''}${can('vaultium','download')?`<button class="btn small" data-dl="${f.id}" data-name="${esc(f.n)}">Download</button>`:''}</div>`).join('')}
   <div class="modal-actions"><button class="btn" data-close>Close</button></div>`);
-  ov.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>openFile(b.dataset.view,b.dataset.name,false));
+  ov.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>fileViewModal(b.dataset.view,b.dataset.name));
   ov.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>openFile(b.dataset.dl,b.dataset.name,true));
 }
 /* ═══════════ NOTIFICATIONS (admin & agent inboxes) ═══════════ */
@@ -433,7 +472,9 @@ function renderDashboard(main,d){
       <div class="value" id="pfAgents">—</div><div class="change" id="pfMeta">—</div></div></div>
     ${kpi('Active Projects',k.activeProjects)}
     ${kpi('Total Allocated Targets',k.assignedTarget.toLocaleString())}
-    ${kpi('Total Acquired Users',k.acquiredUsers.toLocaleString())}
+    <div class="card stat"><div><div class="label" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Total Acquired
+      <select id="acqCat" style="font-size:11px;padding:3px 8px;border-radius:7px;border:1px solid var(--border);background:#fff;cursor:pointer"><option value="all">All</option>${CATEGORIES.map(c=>`<option value="${c}">${catLabel(c)}</option>`).join('')}</select></div>
+      <div class="value" id="acqVal">—</div><div class="change" id="acqMeta">—</div></div></div>
   </div>
   <div class="kpi-grid" style="margin-top:15px">
     ${kpi('Total Income',money(k.totalIncome))}
@@ -468,6 +509,17 @@ function renderDashboard(main,d){
       if(m)m.textContent=(v.followers||0).toLocaleString()+' followers · '+(v.allocations||0).toLocaleString()+' allocations · '+(v.acquired||0).toLocaleString()+' acquired';
     };
     pfSel.onchange=paint;paint();
+  }
+  const acqSel=$('#acqCat');
+  if(acqSel){
+    const paint=()=>{
+      const c=acqSel.value||'all';
+      const v=(k.byCat&&k.byCat[c])||{acquired:0,assigned:0,allocations:0};
+      const av=$('#acqVal'),am=$('#acqMeta');
+      if(av)av.textContent=(v.acquired||0).toLocaleString();
+      if(am)am.textContent=(v.assigned||0).toLocaleString()+' target · '+(v.allocations||0).toLocaleString()+' allocations';
+    };
+    acqSel.onchange=paint;paint();
   }
 }
 
@@ -924,7 +976,7 @@ function renderVaultium(main,rows){
     <td>${esc(f.project_name)}</td>
     <td class="actions-cell">${can('vaultium','view')?`<button class="btn small" data-vopen="${f.id}" data-vname="${esc(f.file_name)}">View</button>`:''}${can('vaultium','download')?`<button class="btn small" data-vdl="${f.id}" data-vdlname="${esc(f.file_name)}">Download</button>`:''}${can('vaultium','delete')?`<button class="btn small danger" data-vdel="${f.id}">×</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="8" class="empty">No files stored yet.</td></tr>'}</tbody></table></div></div>`;
-  main.querySelectorAll('[data-vopen]').forEach(b=>b.onclick=()=>openFile(b.dataset.vopen,b.dataset.vname,false));
+  main.querySelectorAll('[data-vopen]').forEach(b=>b.onclick=()=>fileViewModal(b.dataset.vopen,b.dataset.vname));
   main.querySelectorAll('[data-vdl]').forEach(b=>b.onclick=()=>openFile(b.dataset.dl,b.dataset.dlname,true));
   main.querySelectorAll('[data-vdel]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Delete this file from Vaultium storage?'))return;
