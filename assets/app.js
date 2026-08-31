@@ -1002,7 +1002,7 @@ function renderHelpdeskPanel(main,d){
   <div class="helpdesk2 hd3">
     <aside class="hdlist">
       ${threads.length?threads.map(t=>`<div class="hditem ${hdSelected&&hdSelected.kind===t.kind&&hdSelected.id===t.id?'on':''}" data-hdkind="${t.kind}" data-hdid="${t.id}">
-        <div class="mini">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${esc((t.last||'').slice(0,34))} · ${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
+        <div class="mini">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
       </div>`).join(''):'<div class="empty">No conversations yet.</div>'}
     </aside>
     <section class="hdconversation">
