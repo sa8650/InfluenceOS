@@ -334,6 +334,7 @@ function agentRegisterModal(){
       <div class="field"><label>Phone number</label><input id="rPhone" placeholder="+880…"></div>
       <div class="field"><label>Type</label><select id="rType">${Object.entries(TYPE_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
     </div>
+    <div class="field"><label>Followers <small>(total across your social accounts)</small></label><input id="rFollowers" type="number" min="0" placeholder="e.g. 25000"></div>
     <div class="field"><label>Address</label><input id="rAddress" placeholder="Street, city"></div>
     <div class="field"><label>Password</label><input id="rPass" type="password" placeholder="Minimum 6 characters"></div>
     <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn dark" id="rGo">Create account</button></div>`);
@@ -341,7 +342,7 @@ function agentRegisterModal(){
     const btn=ov.querySelector('#rGo');
     try{
       btn.disabled=true;btn.textContent='Creating…';
-      const r=await api('auth/partner/register',{method:'POST',body:JSON.stringify({name:ov.querySelector('#rName').value,email:ov.querySelector('#rEmail').value,phone:ov.querySelector('#rPhone').value,type:ov.querySelector('#rType').value,address:ov.querySelector('#rAddress').value,password:ov.querySelector('#rPass').value})});
+      const r=await api('auth/partner/register',{method:'POST',body:JSON.stringify({name:ov.querySelector('#rName').value,email:ov.querySelector('#rEmail').value,phone:ov.querySelector('#rPhone').value,type:ov.querySelector('#rType').value,followers:Math.round(num(ov.querySelector('#rFollowers').value)||0),address:ov.querySelector('#rAddress').value,password:ov.querySelector('#rPass').value})});
       save({token:r.token,role:'partner',user:r.user});
       ov.remove();
       modal(`<h2>Welcome, ${esc(r.user.name)}!</h2><p>Your agent account was created. Save your Agent ID — you can sign in with it or your email.</p><div class="kv"><span>Agent ID</span><b style="font-size:20px">${esc(r.user.partner_code)}</b><span>Status</span><b>Waiting for administrator approval</b></div><div class="modal-actions"><button class="btn dark" data-close>Enter my portal</button></div>`);
@@ -427,7 +428,9 @@ function renderDashboard(main,d){
   main.innerHTML=`
   <div class="top"><div class="title"><h1>Good ${new Date().getHours()<12?'morning':new Date().getHours()<18?'afternoon':'evening'}, ${esc(state.user.name)}</h1><p>Marketing agent operations, project contribution and payouts.</p></div></div>
   <div class="kpi-grid">
-    ${kpi('Total Agents',k.totalPartners)}
+    <div class="card stat"><div><div class="label" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Portfolio allocation
+      <select id="kpiType" style="font-size:11px;padding:3px 8px;border-radius:7px;border:1px solid var(--border);background:#fff;cursor:pointer"><option value="all">All types</option>${Object.entries(TYPE_LABELS).map(([t,l])=>`<option value="${t}">${l}</option>`).join('')}</select></div>
+      <div class="value" id="pfAgents">—</div><div class="change" id="pfMeta">—</div></div></div>
     ${kpi('Active Projects',k.activeProjects)}
     ${kpi('Total Allocated Targets',k.assignedTarget.toLocaleString())}
     ${kpi('Total Acquired Users',k.acquiredUsers.toLocaleString())}
@@ -455,6 +458,17 @@ function renderDashboard(main,d){
       </div>
     </div>
   </div>`;
+  const pfSel=$('#kpiType');
+  if(pfSel){
+    const paint=()=>{
+      const t=pfSel.value||'all';
+      const v=(k.byType&&k.byType[t])||{agents:0,followers:0,allocations:0,assigned:0,acquired:0};
+      const a=$('#pfAgents'),m=$('#pfMeta');
+      if(a)a.textContent=(v.agents||0).toLocaleString()+' agents';
+      if(m)m.textContent=(v.followers||0).toLocaleString()+' followers · '+(v.allocations||0).toLocaleString()+' allocations · '+(v.acquired||0).toLocaleString()+' acquired';
+    };
+    pfSel.onchange=paint;paint();
+  }
 }
 
 /* ---------- ADMIN: PARTNERS ---------- */
@@ -506,6 +520,7 @@ function partnerModal(p,all){
       <div class="field"><label>Phone number</label><input id="fPhone" value="${esc(p?.phone||'')}" placeholder="+880…"></div>
       <div class="field"><label>Type</label><select id="fType">${Object.entries(TYPE_LABELS).map(([k,v])=>`<option value="${k}" ${p?.type===k?'selected':''}>${v}</option>`).join('')}</select></div>
     </div>
+    <div class="field"><label>Followers <small>(total across social accounts)</small></label><input id="fFollowers" type="number" min="0" value="${num(p?.followers)||0}"></div>
     <div class="field"><label>Address</label><input id="fAddress" value="${esc(p?.address||'')}" placeholder="Street, city"></div>
     <div class="field"><label>Social / account information <small>(up to 5)</small></label><div id="acctBox"></div>
       <button class="btn small" id="addAcct" type="button">+ Add URL</button></div>
@@ -530,7 +545,7 @@ function partnerModal(p,all){
   ov.querySelector('#fSave').onclick=async()=>{
     const accountsList=[...box.querySelectorAll('.acct-row')].map(r=>({label:r.children[0].value,url:r.children[1].value})).filter(a=>a.label.trim()||a.url.trim());
     const payload={name:ov.querySelector('#fName').value,email:ov.querySelector('#fEmail').value,phone:ov.querySelector('#fPhone').value,
-      type:ov.querySelector('#fType').value,address:ov.querySelector('#fAddress').value,accounts:accountsList,password:ov.querySelector('#fPass').value||undefined,
+      type:ov.querySelector('#fType').value,followers:Math.round(num(ov.querySelector('#fFollowers').value)||0),address:ov.querySelector('#fAddress').value,accounts:accountsList,password:ov.querySelector('#fPass').value||undefined,
       login_access:ov.querySelector('#fAccess').value==='yes',status:ov.querySelector('#fStatus').value,note:ov.querySelector('#fNote').value};
     try{
       if(p){await mutate('partners/'+p.id,{method:'PATCH',body:JSON.stringify(payload)});toast('Agent updated.')}
@@ -1269,6 +1284,7 @@ function renderPProfile(main,me,payMethods=[]){
       <span>Phone number</span><b>${esc(me.phone||'—')}</b>
       <span>Address</span><b>${esc(me.address||'—')}</b>
       <span>Type</span><b>${TYPE_LABELS[me.type]||me.type}</b>
+      <span>Followers</span><b>${(num(me.followers)||0).toLocaleString()}</b>
       <span>Password</span><b>••••••••</b>
     </div>
     <div class="section-head" style="margin-top:18px"><h2>Social accounts</h2></div>
@@ -1302,7 +1318,11 @@ function renderPProfile(main,me,payMethods=[]){
       <div class="field"><label>Name</label><input id="sName" value="${esc(me.name)}"></div>
       <div class="field"><label>Email</label><input id="sEmail" type="email" value="${esc(me.email)}"></div>
     </div>
-    <div class="field"><label>Phone number</label><input id="sPhone" value="${esc(me.phone||'')}"></div>
+    <div class="field-row">
+      <div class="field"><label>Phone number</label><input id="sPhone" value="${esc(me.phone||'')}"></div>
+      <div class="field"><label>Type</label><select id="sType">${Object.entries(TYPE_LABELS).map(([k,v])=>`<option value="${k}" ${me.type===k?'selected':''}>${v}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>Followers <small>(total across your social accounts)</small></label><input id="sFollowers" type="number" min="0" value="${num(me.followers)||0}"></div>
     <div class="field"><label>Address</label><input id="sAddress" value="${esc(me.address||'')}" placeholder="Street, city"></div>
     <div class="field"><label>Social / account information <small>(up to 5)</small></label><div id="sAcctBox"></div>
       <button class="btn small" id="sAddAcct" type="button">+ Add URL</button></div>
@@ -1320,7 +1340,7 @@ function renderPProfile(main,me,payMethods=[]){
     ov.querySelector('#sGo').onclick=async()=>{
       const accountsList=[...box.querySelectorAll('.acct-row')].map(r=>({label:r.children[0].value,url:r.children[1].value})).filter(a=>a.label.trim()||a.url.trim());
       try{
-        await mutate('me/profile',{method:'POST',body:JSON.stringify({name:ov.querySelector('#sName').value,email:ov.querySelector('#sEmail').value,phone:ov.querySelector('#sPhone').value,address:ov.querySelector('#sAddress').value,accounts:accountsList,password:ov.querySelector('#sPass').value||undefined})});
+        await mutate('me/profile',{method:'POST',body:JSON.stringify({name:ov.querySelector('#sName').value,email:ov.querySelector('#sEmail').value,phone:ov.querySelector('#sPhone').value,type:ov.querySelector('#sType').value,followers:Math.round(num(ov.querySelector('#sFollowers').value)||0),address:ov.querySelector('#sAddress').value,accounts:accountsList,password:ov.querySelector('#sPass').value||undefined})});
         ov.remove();toast('Profile updated.');renderPartner();
       }catch(e){toast(e.message)}
     };
