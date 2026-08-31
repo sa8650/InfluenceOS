@@ -573,7 +573,7 @@ body.partner-mode .fv-body{border-color:var(--color-edge);border-radius:8px;back
 body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{color:var(--color-ink)}
 
 /* ---------- ADMIN HELPDESK 3-COLUMN (list · chat · details) ---------- */
-.helpdesk2.hd3{grid-template-columns:212px minmax(0,1fr) 296px}
+.helpdesk2.hd3{grid-template-columns:212px minmax(0,1fr) 356px}
 /* left list — compact, no wasted space */
 .hd3 .hdlist{padding:7px;gap:4px}
 .hd3 .hditem{grid-template-columns:auto 1fr auto;gap:7px;padding:6px 8px;border-radius:8px}
