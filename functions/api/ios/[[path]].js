@@ -34,6 +34,7 @@ const notifyAdmins=(env,kind,title,body,link)=>db(env,'notifications',{method:'P
 const notifyPartner=(env,pid,kind,title,body,link)=>(!pid?Promise.resolve():db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'partner',partner_id:pid,kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})})).catch(()=>{});
 const cleanPerms=p=>{const o={};for(const[m,acts]of Object.entries(PERM_MODULES)){o[m]={};for(const a of acts)o[m][a]=!!(p&&p[m]&&p[m][a]);}return o;};
 const PARTNER_TYPES=['youtuber','facebook','tiktoker','instagram','telegram','marketing_agent','agency'];
+const int0=v=>Math.max(0,Math.round(num(v)||0));
 const PARTNER_STATUSES=['disagree','agree','not_response','waiting'];
 const ALLOCATION_STATUSES=['on_target','active','behind','inactive'];
 const PAYMENT_STATUSES=['scheduled','paid','pending'];
@@ -146,7 +147,7 @@ export async function onRequest(context){
       let partnerCode=null;
       for(let i=0;i<15;i++){let c=String(crypto.getRandomValues(new Uint32Array(1))[0]%9000+1000);let used=await db(env,`partners?partner_code=eq.${c}&select=id`);if(!used.length){partnerCode=c;break}}
       if(!partnerCode)throw Error('Could not allocate a 4-digit Agent ID. Please retry.');
-      const [out]=await db(env,'partners',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_code:partnerCode,name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:String(b.address).slice(0,300),type:b.type,accounts:[],password_hash:await hash(String(b.password)),login_access:true,status:'waiting',note:'Self-registered account — set status to Agree after review.'})});
+      const [out]=await db(env,'partners',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_code:partnerCode,name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:String(b.address).slice(0,300),type:b.type,followers:int0(b.followers),accounts:[],password_hash:await hash(String(b.password)),login_access:true,status:'waiting',note:'Self-registered account — set status to Agree after review.'})});
       await notifyAdmins(env,'agents','New agent registered',(out.name||'A new agent')+' (#'+out.partner_code+') registered and is waiting for review.','partners');
       return json({token:await token({id:out.id,role:'partner',exp:Math.floor(Date.now()/1000)+28800},env.IOS_SESSION_SECRET),user:publicPartner(out),role:'partner'});
     }
@@ -225,13 +226,14 @@ export async function onRequest(context){
         if(!b.name||!email||!b.phone)return fail('Name, email and phone are required.');
         if(b.address!==undefined&&String(b.address).length>300)return fail('Address is too long.');
         if(b.password&&String(b.password).length<6)return fail('Password must be at least 6 characters.');
+        if(b.type!==undefined&&!PARTNER_TYPES.includes(b.type))return fail('Invalid type.');
         let dup=await db(env,`partners?email=eq.${encodeURIComponent(email)}&select=id`);
         if(dup.length&&dup[0].id!==s.id)return fail('An agent with this email already exists.',409);
         const accounts=cleanAccounts(b.accounts);
         if(accounts.length>5)return fail('Maximum 5 account URLs.');
         const [old]=await db(env,`partners?id=eq.${s.id}&select=*`);
         if(!old)return fail('Agent not found.',404);
-        let patch={name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:b.address!==undefined?String(b.address).slice(0,300):(old.address||null),accounts,updated_at:new Date().toISOString()};
+        let patch={name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),type:b.type!==undefined?b.type:(old.type||null),followers:b.followers!==undefined?int0(b.followers):(num(old.followers)||0),address:b.address!==undefined?String(b.address).slice(0,300):(old.address||null),accounts,updated_at:new Date().toISOString()};
         if(b.password)patch.password_hash=await hash(String(b.password));
         const [out]=await db(env,`partners?id=eq.${s.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
         const logs=[];
@@ -239,6 +241,8 @@ export async function onRequest(context){
         if((old.email||'')!==patch.email)logs.push({field:'Email',old_value:String(old.email||''),new_value:patch.email});
         if(String(old.phone||'')!==patch.phone)logs.push({field:'Phone number',old_value:String(old.phone||''),new_value:patch.phone});
         if(String(old.address||'')!==String(patch.address||''))logs.push({field:'Address',old_value:String(old.address||''),new_value:String(patch.address||'')});
+        if(String(old.type||'')!==String(patch.type||''))logs.push({field:'Type',old_value:String(old.type||''),new_value:String(patch.type||'')});
+        if((num(old.followers)||0)!==(patch.followers||0))logs.push({field:'Followers',old_value:String(num(old.followers)||0),new_value:String(patch.followers)});
         if(JSON.stringify(old.accounts||[])!==JSON.stringify(accounts)){
           const norm=a=>String(a.label||'Account').trim().toLowerCase();
           const oldList=Array.isArray(old.accounts)?old.accounts:[],newList=accounts;
@@ -586,7 +590,7 @@ export async function onRequest(context){
 
     if(path==='overview'&&method==='GET'){
       let [partners,projects,allocs,pays]=await Promise.all([
-        db(env,'partners?select=id,name,partner_code,status,type&order=created_at.desc'),
+        db(env,'partners?select=id,name,partner_code,status,type,followers&order=created_at.desc'),
         db(env,'projects?select=*&order=created_at.desc'),
         db(env,'allocations?select=*&order=created_at.desc'),
         db(env,'payments?select=*&order=payment_date.desc,created_at.desc&limit=500')
@@ -597,6 +601,12 @@ export async function onRequest(context){
       let withdrawals=await db(env,'withdrawals?select=amount,status');
       const wdPaid=withdrawals.filter(w=>w.status==='accepted').reduce((a,w)=>a+num(w.amount),0);
       const wdLocked=withdrawals.filter(w=>w.status==='pending').reduce((a,w)=>a+num(w.amount),0);
+      const byType={};
+      for(const p of partners){const t=p.type||'other';const s=byType[t]??={agents:0,followers:0,allocations:0,assigned:0,acquired:0};s.agents++;s.followers+=num(p.followers);}
+      for(const a of allocs){const s=byType[(partnerMap[a.partner_id]||{}).type||'other'];if(!s)continue;s.allocations++;s.assigned+=num(a.assigned_target);s.acquired+=num(a.acquired_users);}
+      const allRow={agents:partners.length,followers:0,allocations:allocs.length,assigned,acquired};
+      for(const t in byType)allRow.followers+=byType[t].followers;
+      byType.all=allRow;
       return json({
         kpis:{
           totalPartners:partners.length,
@@ -606,7 +616,8 @@ export async function onRequest(context){
           totalIncome:Math.round(income*100)/100,
           totalPaid:Math.round(wdPaid*100)/100,
           remainingBalance:Math.round((income-wdPaid-wdLocked)*100)/100,
-          overallPerformance:assigned>0?Math.round(acquired/assigned*100):0
+          overallPerformance:assigned>0?Math.round(acquired/assigned*100):0,
+          byType
         },
         contributions:allocs.map(a=>allocToRow(a,projectMap,partnerMap)),
         projects:projects.map(p=>({id:p.id,name:p.name,status:p.status,target:allocs.filter(a=>a.project_id===p.id).reduce((x,a)=>x+num(a.assigned_target),0),acquired:allocs.filter(a=>a.project_id===p.id).reduce((x,a)=>x+num(a.acquired_users),0),partners:new Set(allocs.filter(a=>a.project_id===p.id).map(a=>a.partner_id)).size})),
@@ -645,7 +656,7 @@ export async function onRequest(context){
       let partnerCode=null;
       for(let i=0;i<15;i++){let code=String(crypto.getRandomValues(new Uint32Array(1))[0]%9000+1000);let used=await db(env,`partners?partner_code=eq.${code}&select=id`);if(!used.length){partnerCode=code;break}}
       if(!partnerCode)throw Error('Could not allocate a 4-digit Partner ID. Please retry.');
-      let [out]=await db(env,'partners',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_code:partnerCode,name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:b.address?String(b.address).slice(0,300):null,type:b.type,accounts:cleanAccounts(b.accounts),password_hash:await hash(String(b.password)),login_access:b.login_access!==false,status:b.status,note:b.note?String(b.note).slice(0,500):null})});
+      let [out]=await db(env,'partners',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_code:partnerCode,name:String(b.name).slice(0,120),email,phone:String(b.phone).slice(0,40),address:b.address?String(b.address).slice(0,300):null,type:b.type,followers:b.followers!==undefined?int0(b.followers):0,accounts:cleanAccounts(b.accounts),password_hash:await hash(String(b.password)),login_access:b.login_access!==false,status:b.status,note:b.note?String(b.note).slice(0,500):null})});
       return json(publicPartner(out),201);
     }
     if(path.startsWith('partners/')&&method==='PATCH'){
@@ -656,6 +667,7 @@ export async function onRequest(context){
       for(const k of ['name','phone','note','address'])if(b[k]!==undefined)patch[k]=String(b[k]).slice(0,500);
       if(b.email!==undefined){let email=String(b.email).trim().toLowerCase();if(!email)return fail('Email cannot be empty.');let dup=await db(env,`partners?email=eq.${encodeURIComponent(email)}&select=id`);if(dup.length&&dup[0].id!==id)return fail('An agent with this email already exists.',409);patch.email=email;}
       if(b.type!==undefined){if(!PARTNER_TYPES.includes(b.type))return fail('Invalid partner type.');patch.type=b.type}
+      if(b.followers!==undefined)patch.followers=int0(b.followers);
       if(b.status!==undefined){if(!PARTNER_STATUSES.includes(b.status))return fail('Invalid partner status.');patch.status=b.status}
       if(b.login_access!==undefined)patch.login_access=!!b.login_access;
       if(b.accounts!==undefined)patch.accounts=cleanAccounts(b.accounts);
