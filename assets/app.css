@@ -553,3 +553,21 @@ body.dashboard-mode .chat .loader-wrap{min-height:120px;background:transparent;b
 .net-stats{display:flex;justify-content:center;gap:13px;margin-top:18px;flex-wrap:wrap}
 .net-stats span{font-size:11px;color:#555;font-weight:600;padding:9px 16px;border-radius:999px;background:#f1f1f1;box-shadow:inset 4px 4px 9px rgba(0,0,0,.10),inset -4px -4px 9px rgba(255,255,255,.95)}
 @media(max-width:1020px){.net-stage{flex-direction:column;min-height:0;gap:28px}.net-svg{display:none}.net-col{flex:1 1 100%;flex-direction:row!important;flex-wrap:wrap;justify-content:center;align-items:stretch;gap:10px}.net-card{min-width:150px}}
+
+/* ---------- FILE VIEWER MODAL ---------- */
+.modal.fileview{max-width:880px;width:92vw}
+.fv-body{min-height:220px;max-height:calc(100dvh - 265px);overflow:auto;border:1px solid var(--border);border-radius:10px;background:#fafafa;margin-top:6px}
+.fv-imgbox{display:grid;place-items:center;min-height:220px;padding:14px;background:repeating-conic-gradient(#f2f2f2 0% 25%,#fff 0% 50%) 50%/22px 22px}
+.fv-imgbox img{max-width:100%;max-height:calc(100dvh - 320px);display:block;border-radius:4px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.fv-pdf{width:100%;height:calc(100dvh - 320px);min-height:320px;border:0;background:#fff}
+.fv-pre{margin:0;padding:14px;font:12px/1.65 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;color:#24292f;background:#fff;min-height:220px}
+.fv-doc{padding:20px;background:#fff;min-height:220px;font-size:13px;line-height:1.6;max-width:100%;overflow-wrap:break-word}
+.fv-doc img{max-width:100%}
+.fv-sheet{padding:12px;background:#fff;min-height:220px}
+.fv-sheet>b{display:block;font-size:12px;color:#777;margin-bottom:8px}
+.fv-sheet table{border-collapse:collapse;font-size:12px}
+.fv-sheet td,.fv-sheet th{border:1px solid #e3e3e3;padding:4px 9px;white-space:nowrap}
+.fv-fallback{display:grid;place-items:center;gap:4px;padding:52px 20px;text-align:center;color:#888;font-size:13px;line-height:1.6}
+.fv-ico{font-size:36px;margin-bottom:8px}
+body.partner-mode .fv-body{border-color:var(--color-edge);border-radius:8px;background:var(--color-cloud)}
+body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{color:var(--color-ink)}
