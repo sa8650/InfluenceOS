@@ -571,3 +571,50 @@ body.dashboard-mode .chat .loader-wrap{min-height:120px;background:transparent;b
 .fv-ico{font-size:36px;margin-bottom:8px}
 body.partner-mode .fv-body{border-color:var(--color-edge);border-radius:8px;background:var(--color-cloud)}
 body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{color:var(--color-ink)}
+
+/* ---------- ADMIN HELPDESK 3-COLUMN (list · chat · details) ---------- */
+.helpdesk2.hd3{grid-template-columns:212px minmax(0,1fr) 296px}
+/* left list — compact, no wasted space */
+.hd3 .hdlist{padding:7px;gap:4px}
+.hd3 .hditem{grid-template-columns:auto 1fr auto;gap:7px;padding:6px 8px;border-radius:8px}
+.hd3 .hditem .mini{width:26px;height:26px;font-size:10px;border-radius:7px}
+.hd3 .hditem b{font-size:11.5px}
+.hd3 .hditem small{font-size:9px;margin-top:2px}
+.hd3 .hditem .pill{font-size:9px;padding:2px 5px}
+/* middle — conversation, tighter */
+.hd3 .hdconvhead{padding:8px 12px}
+.hd3 .hdconvhead h2{font-size:13.5px}
+.hd3 .hdconvhead p{margin:2px 0 0;font-size:10px}
+.hd3 .chat.big{padding:9px 11px;gap:7px}
+.hd3 .chat .msg{padding:6px 10px;font-size:12px;border-radius:9px 9px 9px 3px}
+.hd3 .chat .msg.me{border-radius:9px 9px 3px 9px}
+.hd3 .chat .msg p{font-size:12px;line-height:1.45}
+.hd3 .chat .msg time{font-size:9px;margin-top:3px}
+.hd3 .chatbar{padding:7px 9px;gap:7px}
+.hd3 .chatbar input{padding:8px 11px;font-size:12.5px;border-radius:8px}
+.hd3 .chatbar .btn{padding:8px 13px;font-size:12.5px}
+/* right — details panel */
+.hddet{border-left:1px solid var(--border);background:#fbfbfc;overflow-y:auto;min-height:0}
+.hddet-head{display:flex;align-items:center;gap:9px;padding:10px 11px;border-bottom:1px solid var(--border);background:#fff;position:sticky;top:0;z-index:1}
+.hddet-head .mini{width:34px;height:34px;font-size:12px;border-radius:9px}
+.hddet-head b{font-size:12.5px;display:block}
+.hddet-head small{font-size:9.5px;color:#888;display:block;margin-top:1px}
+.hddet-head .pill{margin-left:auto;font-size:9px;padding:2px 6px}
+.hdmini{padding:9px 11px;border-bottom:1px solid var(--border)}
+.hdmini h3{margin:0 0 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#98a2b3}
+.hdmini h3 i{font-style:normal;color:#c3cad4}
+.hdkv{gap:0}
+.hdkv span{font-size:10px;color:#888;padding:3px 0}
+.hdkv b{font-size:11px;padding:3px 0;text-align:right}
+.hdmini-t{width:100%;border-collapse:collapse;font-size:10.5px}
+.hdmini-t th{text-align:left;font-size:8.5px;text-transform:uppercase;letter-spacing:.05em;color:#aab3c0;padding:2px 4px;border-bottom:1px solid var(--border);white-space:nowrap}
+.hdmini-t td{padding:4px;border-bottom:1px solid #f0f2f5;white-space:nowrap;color:#333}
+.hdmini-t .pill{font-size:8.5px;padding:1px 5px}
+.hdmini-t td.empty,.hdmini .muted{white-space:normal}
+@media(max-width:1100px){
+  .helpdesk2.hd3{grid-template-columns:1fr;height:auto;min-height:0}
+  .hd3 .hdlist{max-height:180px;border-right:0;border-bottom:1px solid var(--border)}
+  .hd3 .hdconversation .chat.big{min-height:300px}
+  .hddet{border-left:0;border-top:1px solid var(--border);max-height:380px}
+  .hddet-head{position:static}
+}
