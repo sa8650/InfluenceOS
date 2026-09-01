@@ -31,9 +31,6 @@ const PERM_MODULES={
 const FULL_PERMS=Object.fromEntries(Object.entries(PERM_MODULES).map(([m,acts])=>[m,Object.fromEntries(acts.map(a=>[a,true]))]));
 /* ---------- NOTIFICATIONS (admin & agent inboxes) ---------- */
 const notifyAdmins=(env,kind,title,body,link)=>db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'admin',kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})}).catch(()=>{});
-const broadcastHelpdesk=(env,kind,id)=>db(env,'helpdesk_wakeups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:String(kind),thread_id:String(id)})}).catch(()=>{});
-const notifyPartner=(env,pid,kind,title,body,link)=>(!pid?Promise.resolve():db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'partner',partner_id:pid,kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})})).catch(()=>{});
-const cleanPerms=p=>{const o={};for(const[m,acts]of Object.entries(PERM_MODULES)){o[m]={};for(const a of acts)o[m][a]=!!(p&&p[m]&&p[m][a]);}return o;};
 const PARTNER_TYPES=['youtuber','facebook','tiktoker','instagram','telegram','marketing_agent','agency'];
 const int0=v=>Math.max(0,Math.round(num(v)||0));
 const PARTNER_STATUSES=['disagree','agree','not_response','waiting'];
@@ -91,6 +88,18 @@ const PROOF_TYPES=['image/png','image/jpeg','image/webp','image/gif','applicatio
 const PROOF_EXT=['png','jpg','jpeg','webp','gif','pdf','txt','doc','docx','xls','xlsx'];
 const acctStr=a=>(Array.isArray(a)&&a.length?a.map(x=>`${x.label||'Account'}: ${x.url||''}`).join(' | '):'(none)');
 
+async function hdRTChannels(env,s){
+  if(s.role==='partner'){
+    const [p]=await db(env,`partners?id=eq.${s.id}&select=channel_secret`);
+    return {channel:p&&p.channel_secret?('ios:agent:'+s.id+':'+p.channel_secret):null};
+  }
+  if(s.kind==='user'){
+    const [u]=await db(env,`admin_users?id=eq.${s.id}&select=channel_secret`);
+    return {channel:u&&u.channel_secret?('ios:user:'+s.id+':'+u.channel_secret):null};
+  }
+  const [a]=await db(env,`helpdesk_channels?scope=eq.admin&select=secret`);
+  return {channel:a&&a.secret?('ios:admin:'+a.secret):null};
+}
 export async function onRequest(context){
   const {request,env,params}=context, path=(params.path||[]).join('/'), method=request.method;
   try{
@@ -211,13 +220,18 @@ export async function onRequest(context){
     }
 
     if(path==='helpdesk/rt-test'&&method==='POST'){
+      if(!env.IOS_SUPABASE_URL||!env.IOS_SUPABASE_ANON_KEY)return fail('Realtime not enabled — IOS_SUPABASE_ANON_KEY is missing on the server.');
       try{
-        const [row]=await db(env,'helpdesk_wakeups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:'test',thread_id:String(s.role==='partner'?s.id:'admin')})});
-        return json({ok:true,inserted:!!row});
-      }catch(e){return fail('Wake-up insert failed (run 018_helpdesk_realtime.sql in Supabase): '+e.message)}
+        const cfg=await hdRTChannels(env,s);
+        await db(env,'rpc/hd_rt_probe',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chan:cfg.channel})});
+        return json({ok:true});
+      }catch(e){return fail('Probe failed (run 019_helpdesk_broadcast.sql in Supabase): '+e.message)}
     }
     if(path==='realtime/config'&&method==='GET'){
-      return json({enabled:!!(env.IOS_SUPABASE_URL&&env.IOS_SUPABASE_ANON_KEY),url:env.IOS_SUPABASE_URL||null,anonKey:env.IOS_SUPABASE_ANON_KEY||null,table:'helpdesk_wakeups'});
+      try{
+        const c=await hdRTChannels(env,s);
+        return json({enabled:!!(env.IOS_SUPABASE_URL&&env.IOS_SUPABASE_ANON_KEY&&c.channel),url:env.IOS_SUPABASE_URL||null,anonKey:env.IOS_SUPABASE_ANON_KEY||null,channel:c.channel});
+      }catch(e){return json({enabled:false,url:env.IOS_SUPABASE_URL||null,anonKey:env.IOS_SUPABASE_ANON_KEY||null,channel:null})}
     }
 
     /* ---------- PARTNER (agent) SELF-SERVICE ---------- */
@@ -389,7 +403,6 @@ export async function onRequest(context){
         let b=await body(request),text=String(b.body||'').trim();
         if(!text)return fail('Message cannot be empty.');
         const [out]=await db(env,'helpdesk_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_id:s.id,sender_type:'agent',sender_id:s.id,body:text.slice(0,2000),read_by_agent:true})});
-      broadcastHelpdesk(env,'agent',s.id);
         return json(out,201);
       }
       const TEAM_TYPES=['youtuber','facebook','tiktoker','instagram','telegram','marketing_agent','agency'];
@@ -944,7 +957,7 @@ export async function onRequest(context){
     if(/^helpdesk\/agent\/[^/]+$/.test(path)&&method==='POST'&&s.role==='admin'){
       const pid=path.split('/')[2];let b=await body(request),text=String(b.body||'').trim();if(!text)return fail('Message cannot be empty.');
       let [partner]=await db(env,`partners?id=eq.${pid}&select=id`);if(!partner)return fail('Agent not found.',404);
-      const [out]=await db(env,'helpdesk_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_id:pid,sender_type:'admin',sender_id:s.id,body:text.slice(0,2000),read_by_admin:true})});broadcastHelpdesk(env,'agent',pid);return json(out,201);
+      const [out]=await db(env,'helpdesk_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_id:pid,sender_type:'admin',sender_id:s.id,body:text.slice(0,2000),read_by_admin:true})});return json(out,201);
     }
     if(/^helpdesk\/user\/[^/]+$/.test(path)&&method==='GET'&&s.role==='admin'){
       const uid=path.split('/')[2];
@@ -961,7 +974,7 @@ export async function onRequest(context){
       let b=await body(request),text=String(b.body||'').trim();if(!text)return fail('Message cannot be empty.');
       let [user]=await db(env,`admin_users?id=eq.${uid}&select=id`);if(!user)return fail('User not found.',404);
       const sender=s.kind==='user'?'user':'owner';
-      const [out]=await db(env,'admin_user_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_id:uid,sender_type:sender,sender_id:s.id,body:text.slice(0,2000),read_by_owner:sender==='owner',read_by_user:sender==='user'})});broadcastHelpdesk(env,'user',uid);return json(out,201);
+      const [out]=await db(env,'admin_user_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_id:uid,sender_type:sender,sender_id:s.id,body:text.slice(0,2000),read_by_owner:sender==='owner',read_by_user:sender==='user'})});return json(out,201);
     }
     if(/^helpdesk\/[^/]+$/.test(path)&&method==='GET'&&s.role==='admin'){
       const pid=path.split('/')[1];
@@ -978,7 +991,7 @@ export async function onRequest(context){
       if(!text)return fail('Message cannot be empty.');
       let [partner]=await db(env,`partners?id=eq.${pid}&select=id`);
       if(!partner)return fail('Agent not found.',404);
-      const [out]=await db(env,'helpdesk_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_id:pid,sender_type:'admin',sender_id:s.id,body:text.slice(0,2000),read_by_admin:true})});broadcastHelpdesk(env,'agent',pid);
+      const [out]=await db(env,'helpdesk_messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({partner_id:pid,sender_type:'admin',sender_id:s.id,body:text.slice(0,2000),read_by_admin:true})});
       return json(out,201);
     }
 
