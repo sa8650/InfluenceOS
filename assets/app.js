@@ -70,28 +70,77 @@ async function fileViewModal(id,name){
   }catch(e){body.innerHTML=fvFallback(name,e.message)}
 }
 /* ═══ HELPDESK REALTIME — Supabase broadcast wake-up → EMS re-fetch (no polling) ═══ */
-let hdRT={client:null,channel:null,handler:null};
+let hdRT={client:null,channel:null,starting:false,state:null,agentDraw:null};
 const hdRTDebounce=(fn,ms=350)=>{let t;return p=>{clearTimeout(t);t=setTimeout(()=>fn(p),ms)}};
-async function startHelpdeskRealtime(handler){
-  hdRT.handler=handler;
-  if(hdRT.channel)return;
+function setRtPill(st){
+  hdRT.state=st;
+  const dot=$('#rtLive');if(!dot)return;
+  dot.className='rtlive '+st;
+  dot.textContent=st==='live'?'\u25CF live':st==='conn'?'\u25CF connecting':st==='off'?'\u25CF offline':'\u25CF not enabled';
+  dot.title=st==='dis'?'Live chat is OFF: add IOS_SUPABASE_ANON_KEY in Cloudflare Pages \u2192 Settings \u2192 Environment variables, redeploy, then refresh.':'Supabase Realtime connection';
+  dot.style.display='inline-flex';
+}
+function hdRTDispatch(p){
+  try{
+    if(state&&state.role==='admin'){
+      if(p.kind!=='agent'&&p.kind!=='user')return;
+      if(aView==='helpdesk'){
+        if(hdSelected&&p.kind===hdSelected.kind&&String(p.thread_id)===String(hdSelected.id))loadHelpdeskConversation();
+        else api('helpdesk').then(d=>{updateHdBadge(d.totalUnread||0);const list=document.querySelector('.hdlist');if(list)list.innerHTML=hdListItemsHtml(d.threads||[])}).catch(()=>{});
+      }else api('helpdesk').then(d=>updateHdBadge(d.totalUnread||0)).catch(()=>{});
+    }else if(state&&state.role==='partner'){
+      if(p.kind!=='agent'||String(p.thread_id)!==String(state.user&&state.user.id))return;
+      if(pView==='helpdesk'&&hdRT.agentDraw)hdRT.agentDraw();
+      else api('helpdesk').then(d=>updateHdBadge(d.unread||0)).catch(()=>{});
+    }
+  }catch(_){}
+}
+const hdRTRoute=hdRTDebounce(hdRTDispatch);
+async function startHelpdeskRealtime(){
+  if(hdRT.channel||hdRT.starting)return;
+  hdRT.starting=true;setRtPill('conn');
   let cfg=null;try{cfg=await api('realtime/config')}catch(e){}
-  if(!cfg||!cfg.enabled)return;
+  if(!cfg||!cfg.enabled){setRtPill('dis');hdRT.starting=false;return}
   try{
     await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js');
-    if(!window.supabase)return;
+    if(!window.supabase){setRtPill('off');hdRT.starting=false;return}
     if(!hdRT.client)hdRT.client=window.supabase.createClient(cfg.url,cfg.anonKey,{realtime:{params:{eventsPerSecond:10}}});
-    hdRT.channel=hdRT.client.channel(cfg.topic||'ios:helpdesk');
-    hdRT.channel.on('broadcast',{event:'msg'},e=>{if(hdRT.handler)try{hdRT.handler(e.payload||{})}catch(_){}});
-    hdRT.channel.subscribe(st=>{const dot=$('#rtLive');if(dot)dot.style.display=st==='SUBSCRIBED'?'inline-flex':'none'});
-  }catch(e){}
+    const ch=hdRT.client.channel('helpdesk-realtime');
+    ch.on('postgres_changes',{event:'INSERT',schema:'public',table:cfg.table||'helpdesk_wakeups'},e=>{
+      const p=(e&&e.new)||{};console.debug('[helpdesk-rt] wakeup',p);
+      if(p.kind==='test'){toast('Realtime OK — live connection confirmed ✓');return}
+      hdRTRoute(p);
+    });
+    ch.subscribe(st=>{
+      if(st==='SUBSCRIBED')setRtPill('live');
+      else if(st==='CHANNEL_ERROR'||st==='TIMED_OUT'||st==='CLOSED'){
+        setRtPill('off');
+        try{if(hdRT.client&&hdRT.client.removeChannel)hdRT.client.removeChannel(ch)}catch(_){}
+        if(hdRT.channel===ch)hdRT.channel=null;
+        setTimeout(()=>startHelpdeskRealtime(),4000);
+      }
+    });
+    hdRT.channel=ch;
+  }catch(e){setRtPill('off')}
+  hdRT.starting=false;
 }
+function wireRtPill(){
+  const b=document.querySelector('#rtLive');if(!b||b.onclick)return;
+  b.onclick=async()=>{
+    try{
+      const r=await api('helpdesk/rt-test',{method:'POST',body:JSON.stringify({})});
+      toast(r&&r.inserted?'Wake-up row inserted — if the connection works you will see a green confirmation in a moment…':'Unexpected test response.');
+    }catch(e){toast('Realtime test failed: '+e.message)}
+  };
+}
+function refreshRtPill(){setRtPill(hdRT.state||'dis')}
 function stopHelpdeskRealtime(){
   try{if(hdRT.channel)hdRT.channel.unsubscribe()}catch(e){}
   try{if(hdRT.client&&hdRT.channel&&hdRT.client.removeChannel)hdRT.client.removeChannel(hdRT.channel)}catch(e){}
-  hdRT.channel=null;
-  const dot=$('#rtLive');if(dot)dot.style.display='none';
+  hdRT.channel=null;hdRT.agentDraw=null;
+  document.querySelectorAll('#rtLive').forEach(d=>d.style.display='none');
 }
+window.hdRTDispatch=hdRTDispatch;
 const openFile=async(id,name,download)=>{
   try{
     const r=await fetch('/api/ios/files/'+id,{cache:'no-store',headers:{'cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{})}});
@@ -200,7 +249,7 @@ const readPermsFrom=ov=>{
   return out;
 };
 function save(s){state=s;localStorage.setItem('ios.session',JSON.stringify(s))}
-function logout(){localStorage.removeItem('ios.session');state=null;boot()}
+function logout(){stopHelpdeskRealtime();localStorage.removeItem('ios.session');state=null;boot()}
 
 /* ═══════════ MODAL SYSTEM ═══════════ */
 function modal(html,cls=''){
@@ -457,10 +506,10 @@ function adminApp(){
   refreshNotifs();
   api('helpdesk').then(d=>updateHdBadge(d.totalUnread||0)).catch(()=>{});
   renderAdmin();
+  startHelpdeskRealtime();
 }
 async function renderAdmin(){
   const main=$('#main');if(!main)return;
-  if(aView!=='helpdesk')stopHelpdeskRealtime();
   refreshNotifs();
   try{
     if(aView==='dashboard')return await aDashboard(main);
@@ -1019,6 +1068,11 @@ async function aHelpdesk(main){
   if(d.mode==='user'&&d.threads?.length)hdSelected={kind:'user',id:d.threads[0].id};
   renderHelpdeskPanel(main,d);
 }
+function hdListItemsHtml(threads){
+  return threads.length?threads.map(t=>`<div class="hditem ${hdSelected&&hdSelected.kind===t.kind&&hdSelected.id===t.id?'on':''}" data-hdkind="${t.kind}" data-hdid="${t.id}">
+        <div class="mini ${t.kind==='agent'?'m-ag':'m-usr'}">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
+      </div>`).join(''):'<div class="empty">No conversations yet.</div>';
+}
 function renderHelpdeskPanel(main,d){
   const threads=d.threads||[], selected=threads.find(t=>hdSelected&&t.kind===hdSelected.kind&&t.id===hdSelected.id);
   main.innerHTML=`
@@ -1026,21 +1080,17 @@ function renderHelpdeskPanel(main,d){
   <div class="helpdesk2 hd3">
     <aside class="hdlist">
       <div class="hdlisthead"><b>Chats</b><span>${threads.length} open</span><i class="rtlive" id="rtLive" style="display:none">● live</i></div>
-      ${threads.length?threads.map(t=>`<div class="hditem ${hdSelected&&hdSelected.kind===t.kind&&hdSelected.id===t.id?'on':''}" data-hdkind="${t.kind}" data-hdid="${t.id}">
-        <div class="mini ${t.kind==='agent'?'m-ag':'m-usr'}">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
-      </div>`).join(''):'<div class="empty">No conversations yet.</div>'}
+      ${hdListItemsHtml(threads)}
     </aside>
     <section class="hdconversation">
       ${selected?`<div class="hdconvhead"><div><h2>${esc(selected.name)}</h2><p>${selected.kind==='agent'?'Agent #'+esc(selected.code):d.mode==='user'?'Primary administrator':'Board user · '+esc(selected.code||'')}</p></div></div><div class="chat big" id="hdLog">${loaderHtml('Loading conversation…')}</div><div class="chatbar"><input id="hdInput" placeholder="Write a message…"><button class="btn dark" id="hdSend">Send</button></div>`:'<div class="empty">Select a conversation from the left.</div>'}
     </section>
     <aside class="hddet" id="hdDet">${loaderHtml('Loading…')}</aside>
   </div>`;
-  main.querySelectorAll('[data-hdid]').forEach(el=>el.onclick=()=>{hdSelected={kind:el.dataset.hdkind,id:el.dataset.hdid};renderHelpdeskPanel(main,d);loadHelpdeskConversation()});
+  const listEl=main.querySelector('.hdlist');
+  if(listEl)listEl.onclick=e=>{const el=e.target.closest('[data-hdid]');if(!el)return;hdSelected={kind:el.dataset.hdkind,id:el.dataset.hdid};renderHelpdeskPanel(main,d);loadHelpdeskConversation()};
   if(selected){loadHelpdeskConversation();loadHelpdeskDetails(selected)}
-  startHelpdeskRealtime(hdRTDebounce(p=>{
-    if(hdSelected&&p.kind===hdSelected.kind&&String(p.id)===String(hdSelected.id))loadHelpdeskConversation();
-    api('helpdesk').then(d=>updateHdBadge(d.totalUnread||0)).catch(()=>{});
-  }));
+  refreshRtPill();wireRtPill();
 }
 async function loadHelpdeskConversation(){
   if(!hdSelected)return;
@@ -1370,6 +1420,7 @@ function partnerApp(){
   refreshNotifs();
   api('helpdesk').then(d=>updateHdBadge(d.unread||0)).catch(()=>{});
   renderPartner();
+  startHelpdeskRealtime();
 }
 async function renderPartner(){
   const main=$('#main');if(!main)return;
@@ -1379,8 +1430,7 @@ async function renderPartner(){
     if(pView==='team')return await pTeam(main);
     if(pView==='allocations')return await pAllocations(main);
     if(pView==='contribute')return await pContribute(main);
-    if(pView==='helpdesk'){return await pHelpdesk(main)}
-    stopHelpdeskRealtime();
+    if(pView==='helpdesk')return await pHelpdesk(main);
     if(pView==='projects')return await pOverview(main,'projects');
     if(pView==='payments')return await pOverview(main,'payments');
     if(pView==='performance')return await pOverview(main,'performance');
@@ -1823,9 +1873,8 @@ async function pHelpdesk(main){
   };
   $('#phSend').onclick=send;
   $('#phInput').onkeydown=e=>{if(e.key==='Enter')send()};
-  startHelpdeskRealtime(hdRTDebounce(p=>{
-    if(p.kind==='agent'&&String(p.id)===String(state.user&&state.user.id))draw();
-  }));
+  hdRT.agentDraw=draw;
+  refreshRtPill();wireRtPill();
   await draw();
 }
 
