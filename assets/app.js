@@ -72,6 +72,23 @@ async function fileViewModal(id,name){
 /* ═══ HELPDESK REALTIME — Supabase broadcast wake-up → EMS re-fetch (no polling) ═══ */
 let hdRT={client:null,channel:null,starting:false,state:null,agentDraw:null};
 const hdRTDebounce=(fn,ms=350)=>{let t;return p=>{clearTimeout(t);t=setTimeout(()=>fn(p),ms)}};
+let hdAudio=null;
+function playPing(){
+  try{
+    hdAudio=hdAudio||new (window.AudioContext||window.webkitAudioContext)();
+    if(hdAudio.state==='suspended')hdAudio.resume();
+    const t=hdAudio.currentTime,o=hdAudio.createOscillator(),g=hdAudio.createGain();
+    o.type='sine';o.frequency.setValueAtTime(880,t);o.frequency.exponentialRampToValueAtTime(1318,t+0.12);
+    g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.16,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+0.32);
+    o.connect(g).connect(hdAudio.destination);o.start(t);o.stop(t+0.34);
+  }catch(e){}
+}
+const hdRTIsOwn=p=>{
+  if(!state||!p.sender)return false;
+  if(state.role==='partner')return p.sender==='agent';
+  if(state.user&&state.user.kind==='user')return p.sender==='user';
+  return p.sender==='admin'||p.sender==='owner';
+};
 function setRtPill(st){
   hdRT.state=st;
   const dot=$('#rtLive');if(!dot)return;
@@ -96,6 +113,7 @@ function hdRTDispatch(p){
   }catch(_){}
 }
 const hdRTRoute=hdRTDebounce(hdRTDispatch);
+const msgStatus=seen=>seen?'<span class="mst seen">Seen</span>':(hdRT.state==='live'?'<span class="mst dlv">Delivered</span>':'<span class="mst sent">Sent</span>');
 async function startHelpdeskRealtime(){
   if(hdRT.channel||hdRT.starting)return;
   hdRT.starting=true;setRtPill('conn');
@@ -109,6 +127,7 @@ async function startHelpdeskRealtime(){
     ch.on('broadcast',{event:'msg'},e=>{
       const p=(e&&e.payload)||{};console.debug('[helpdesk-rt] broadcast',p);
       if(p.kind==='test'){toast('Realtime OK — live connection confirmed ✓');return}
+      if(!hdRTIsOwn(p))playPing();
       hdRTRoute(p);
     });
     ch.subscribe(st=>{
@@ -1097,11 +1116,9 @@ async function loadHelpdeskConversation(){
   const log=$('#hdLog');if(!log)return;
   try{
     const d=await api(`helpdesk/${hdSelected.kind}/${hdSelected.id}`);
-    const name=d.thread?.name||'User';
     log.innerHTML=d.messages.length?d.messages.map(m=>{
       const mine=(hdSelected.kind==='agent'&&m.sender_type==='admin')||(hdSelected.kind==='user'&&((state.user.kind==='user'&&m.sender_type==='user')||(state.user.kind!=='user'&&m.sender_type==='owner')));
-      const who=mine?'You':name;
-      return `<div class="msg ${mine?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)} · ${esc(who)}</time></div>`;
+        return `<div class="msg ${mine?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)}${mine?' · '+msgStatus(hdSelected.kind==='agent'?m.read_by_agent:m.read_by_user):''}</time></div>`;
     }).join(''):'<div class="empty">No messages yet — say hello.</div>';
     log.scrollTop=log.scrollHeight;
     const send=async()=>{const input=$('#hdInput'),text=input.value.trim();if(!text)return;try{input.value='';await mutate(`helpdesk/${hdSelected.kind}/${hdSelected.id}`,{method:'POST',body:JSON.stringify({body:text})});await loadHelpdeskConversation()}catch(e){toast(e.message)}};
@@ -1859,7 +1876,7 @@ async function pHelpdesk(main){
     const d=await api('helpdesk');
     if(pView!=='helpdesk')return;
     const log=$('#phLog');if(!log)return;
-    log.innerHTML=d.messages.length?d.messages.map(m=>`<div class="msg ${m.sender_type==='agent'?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)} · ${m.sender_type==='agent'?'You':'Admin'}</time></div>`).join(''):'<div class="empty">No messages yet — write to the administrator anytime.</div>';
+    log.innerHTML=d.messages.length?d.messages.map(m=>`<div class="msg ${m.sender_type==='agent'?'me':''}"><p>${esc(m.body)}</p><time>${fmtDT(m.created_at)}${m.sender_type==='agent'?' · '+msgStatus(m.read_by_admin):''}</time></div>`).join(''):'<div class="empty">No messages yet — write to the administrator anytime.</div>';
     log.scrollTop=log.scrollHeight;
     updateHdBadge(d.unread||0);
   };
