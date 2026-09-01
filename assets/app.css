@@ -627,3 +627,7 @@ body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{
   .hddet{border-left:0;border-top:1px solid var(--border);max-height:380px}
   .hddet-head{position:static}
 }
+
+/* ---------- HELPDESK REALTIME LIVE PILL ---------- */
+.rtlive{display:inline-flex;align-items:center;font-style:normal;font-size:9px;font-weight:700;color:#1e9e6a;background:#e6f7ef;padding:3px 9px;border-radius:999px;letter-spacing:.05em}
+.section-box.hdpage{position:relative}
