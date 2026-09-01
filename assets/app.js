@@ -69,6 +69,29 @@ async function fileViewModal(id,name){
     }else body.innerHTML=fvFallback(name);
   }catch(e){body.innerHTML=fvFallback(name,e.message)}
 }
+/* ═══ HELPDESK REALTIME — Supabase broadcast wake-up → EMS re-fetch (no polling) ═══ */
+let hdRT={client:null,channel:null,handler:null};
+const hdRTDebounce=(fn,ms=350)=>{let t;return p=>{clearTimeout(t);t=setTimeout(()=>fn(p),ms)}};
+async function startHelpdeskRealtime(handler){
+  hdRT.handler=handler;
+  if(hdRT.channel)return;
+  let cfg=null;try{cfg=await api('realtime/config')}catch(e){}
+  if(!cfg||!cfg.enabled)return;
+  try{
+    await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js');
+    if(!window.supabase)return;
+    if(!hdRT.client)hdRT.client=window.supabase.createClient(cfg.url,cfg.anonKey,{realtime:{params:{eventsPerSecond:10}}});
+    hdRT.channel=hdRT.client.channel(cfg.topic||'ios:helpdesk');
+    hdRT.channel.on('broadcast',{event:'msg'},e=>{if(hdRT.handler)try{hdRT.handler(e.payload||{})}catch(_){}});
+    hdRT.channel.subscribe(st=>{const dot=$('#rtLive');if(dot)dot.style.display=st==='SUBSCRIBED'?'inline-flex':'none'});
+  }catch(e){}
+}
+function stopHelpdeskRealtime(){
+  try{if(hdRT.channel)hdRT.channel.unsubscribe()}catch(e){}
+  try{if(hdRT.client&&hdRT.channel&&hdRT.client.removeChannel)hdRT.client.removeChannel(hdRT.channel)}catch(e){}
+  hdRT.channel=null;
+  const dot=$('#rtLive');if(dot)dot.style.display='none';
+}
 const openFile=async(id,name,download)=>{
   try{
     const r=await fetch('/api/ios/files/'+id,{cache:'no-store',headers:{'cache-control':'no-store',...(state?.token?{authorization:'Bearer '+state.token}:{})}});
@@ -437,6 +460,7 @@ function adminApp(){
 }
 async function renderAdmin(){
   const main=$('#main');if(!main)return;
+  if(aView!=='helpdesk')stopHelpdeskRealtime();
   refreshNotifs();
   try{
     if(aView==='dashboard')return await aDashboard(main);
@@ -1001,7 +1025,7 @@ function renderHelpdeskPanel(main,d){
   <div class="top"><div class="title"><h1>HelpDesk</h1><p>${d.mode==='user'?'Chat with the primary administrator.':'Chat with agents and admin-board users.'}</p></div></div>
   <div class="helpdesk2 hd3">
     <aside class="hdlist">
-      <div class="hdlisthead"><b>Chats</b><span>${threads.length} open</span></div>
+      <div class="hdlisthead"><b>Chats</b><span>${threads.length} open</span><i class="rtlive" id="rtLive" style="display:none">● live</i></div>
       ${threads.length?threads.map(t=>`<div class="hditem ${hdSelected&&hdSelected.kind===t.kind&&hdSelected.id===t.id?'on':''}" data-hdkind="${t.kind}" data-hdid="${t.id}">
         <div class="mini ${t.kind==='agent'?'m-ag':'m-usr'}">${esc(initials(t.name))}</div><div><b>${esc(t.name)} <small>${t.kind==='agent'?'#'+esc(t.code):esc(t.code||'user')}</small></b><small>${fmtDT(t.last_at)}</small></div>${t.unread?`<span class="pill red">${t.unread}</span>`:''}
       </div>`).join(''):'<div class="empty">No conversations yet.</div>'}
@@ -1013,6 +1037,10 @@ function renderHelpdeskPanel(main,d){
   </div>`;
   main.querySelectorAll('[data-hdid]').forEach(el=>el.onclick=()=>{hdSelected={kind:el.dataset.hdkind,id:el.dataset.hdid};renderHelpdeskPanel(main,d);loadHelpdeskConversation()});
   if(selected){loadHelpdeskConversation();loadHelpdeskDetails(selected)}
+  startHelpdeskRealtime(hdRTDebounce(p=>{
+    if(hdSelected&&p.kind===hdSelected.kind&&String(p.id)===String(hdSelected.id))loadHelpdeskConversation();
+    api('helpdesk').then(d=>updateHdBadge(d.totalUnread||0)).catch(()=>{});
+  }));
 }
 async function loadHelpdeskConversation(){
   if(!hdSelected)return;
@@ -1351,7 +1379,8 @@ async function renderPartner(){
     if(pView==='team')return await pTeam(main);
     if(pView==='allocations')return await pAllocations(main);
     if(pView==='contribute')return await pContribute(main);
-    if(pView==='helpdesk')return await pHelpdesk(main);
+    if(pView==='helpdesk'){return await pHelpdesk(main)}
+    stopHelpdeskRealtime();
     if(pView==='projects')return await pOverview(main,'projects');
     if(pView==='payments')return await pOverview(main,'payments');
     if(pView==='performance')return await pOverview(main,'performance');
@@ -1772,7 +1801,7 @@ function contributeModal(overview){
 async function pHelpdesk(main){
   main.innerHTML=`
   <div class="top"><div class="title"><h1>HelpDesk</h1><p>Your continuous conversation with the administrator.</p></div></div>
-  <div class="section-box hdpage">
+  <div class="section-box hdpage"><span class="rtlive" id="rtLive" style="display:none;position:absolute;top:10px;right:12px;z-index:2">● live</span>
     <div class="chat big" id="phLog">${loaderHtml('Loading conversation…')}</div>
     <div class="chatbar"><input id="phInput" placeholder="Write a message…"><button class="btn dark" id="phSend">Send</button></div>
   </div>`;
@@ -1794,6 +1823,9 @@ async function pHelpdesk(main){
   };
   $('#phSend').onclick=send;
   $('#phInput').onkeydown=e=>{if(e.key==='Enter')send()};
+  startHelpdeskRealtime(hdRTDebounce(p=>{
+    if(p.kind==='agent'&&String(p.id)===String(state.user&&state.user.id))draw();
+  }));
   await draw();
 }
 
