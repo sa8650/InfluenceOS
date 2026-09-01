@@ -928,7 +928,7 @@ export async function onRequest(context){
       }
       let [agentMsgs,partners,userMsgs,users]=await Promise.all([
         db(env,'helpdesk_messages?select=*&order=created_at.desc&limit=5000'),
-        db(env,'partners?select=id,name,partner_code'),
+        db(env,'partners?select=id,name,partner_code,created_at'),
         db(env,'admin_user_messages?select=*&order=created_at.desc&limit=5000'),
         db(env,'admin_users?select=id,name,email,status&order=created_at.desc')]);
       const sm=Object.fromEntries(partners.map(x=>[x.id,x])),threads={};
@@ -937,6 +937,7 @@ export async function onRequest(context){
         threads[key]??={kind:'agent',id:m.partner_id,name:sm[m.partner_id]?.name||'—',code:sm[m.partner_id]?.partner_code||'',last:'',last_at:m.created_at,unread:0,total:0};
         const t=threads[key];t.total++;if(m.sender_type==='agent'&&!m.read_by_admin)t.unread++;if(!t.last_at||new Date(m.created_at)>=new Date(t.last_at)){t.last=m.body;t.last_at=m.created_at}
       }
+      for(const p of partners){const key='agent:'+p.id;threads[key]??={kind:'agent',id:p.id,name:p.name||'—',code:p.partner_code||'',last:'No messages yet.',last_at:p.created_at||null,unread:0,total:0}}
       const umap=Object.fromEntries(users.map(x=>[x.id,x]));
       for(const u of users){const key='user:'+u.id;threads[key]??={kind:'user',id:u.id,name:u.name,code:u.status,last:'No messages yet.',last_at:u.created_at,unread:0,total:0}}
       for(const m of userMsgs){
