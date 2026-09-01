@@ -630,4 +630,8 @@ body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{
 
 /* ---------- HELPDESK REALTIME LIVE PILL ---------- */
 .rtlive{display:inline-flex;align-items:center;font-style:normal;font-size:9px;font-weight:700;color:#1e9e6a;background:#e6f7ef;padding:3px 9px;border-radius:999px;letter-spacing:.05em}
+.rtlive.conn{color:#b07a00;background:#fff6df}
+.rtlive.off{color:#c0392b;background:#fdecea}
+.rtlive.dis{color:#8a94a3;background:#eef1f4;cursor:help}
 .section-box.hdpage{position:relative}
+.rtlive{cursor:pointer}
