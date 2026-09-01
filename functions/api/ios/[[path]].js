@@ -31,7 +31,7 @@ const PERM_MODULES={
 const FULL_PERMS=Object.fromEntries(Object.entries(PERM_MODULES).map(([m,acts])=>[m,Object.fromEntries(acts.map(a=>[a,true]))]));
 /* ---------- NOTIFICATIONS (admin & agent inboxes) ---------- */
 const notifyAdmins=(env,kind,title,body,link)=>db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'admin',kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})}).catch(()=>{});
-const broadcastHelpdesk=(env,kind,id)=>(!env.IOS_SUPABASE_URL||!env.IOS_SUPABASE_ANON_KEY?Promise.resolve():fetch(String(env.IOS_SUPABASE_URL).replace(/\/$/,'')+'/realtime/v1/api/broadcast',{method:'POST',headers:{'content-type':'application/json','apikey':env.IOS_SUPABASE_SERVICE_ROLE_KEY,'authorization':'Bearer '+env.IOS_SUPABASE_SERVICE_ROLE_KEY},body:JSON.stringify({messages:[{topic:'ios:helpdesk',event:'msg',payload:{kind:String(kind),id:String(id),at:Date.now()}}]})})).catch(()=>{});
+const broadcastHelpdesk=(env,kind,id)=>db(env,'helpdesk_wakeups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:String(kind),thread_id:String(id)})}).catch(()=>{});
 const notifyPartner=(env,pid,kind,title,body,link)=>(!pid?Promise.resolve():db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'partner',partner_id:pid,kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})})).catch(()=>{});
 const cleanPerms=p=>{const o={};for(const[m,acts]of Object.entries(PERM_MODULES)){o[m]={};for(const a of acts)o[m][a]=!!(p&&p[m]&&p[m][a]);}return o;};
 const PARTNER_TYPES=['youtuber','facebook','tiktoker','instagram','telegram','marketing_agent','agency'];
@@ -210,8 +210,14 @@ export async function onRequest(context){
       return new Response(obj.body,{headers:{'content-type':obj.httpMetadata?.contentType||f.file_type||'application/octet-stream','content-disposition':`inline; filename="${f.file_name||'file'}"`,'cache-control':'private, no-store'}});
     }
 
+    if(path==='helpdesk/rt-test'&&method==='POST'){
+      try{
+        const [row]=await db(env,'helpdesk_wakeups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:'test',thread_id:String(s.role==='partner'?s.id:'admin')})});
+        return json({ok:true,inserted:!!row});
+      }catch(e){return fail('Wake-up insert failed (run 018_helpdesk_realtime.sql in Supabase): '+e.message)}
+    }
     if(path==='realtime/config'&&method==='GET'){
-      return json({enabled:!!(env.IOS_SUPABASE_URL&&env.IOS_SUPABASE_ANON_KEY),url:env.IOS_SUPABASE_URL||null,anonKey:env.IOS_SUPABASE_ANON_KEY||null,topic:'ios:helpdesk'});
+      return json({enabled:!!(env.IOS_SUPABASE_URL&&env.IOS_SUPABASE_ANON_KEY),url:env.IOS_SUPABASE_URL||null,anonKey:env.IOS_SUPABASE_ANON_KEY||null,table:'helpdesk_wakeups'});
     }
 
     /* ---------- PARTNER (agent) SELF-SERVICE ---------- */
