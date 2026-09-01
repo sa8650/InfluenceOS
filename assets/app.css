@@ -588,8 +588,8 @@ body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{
 .hd3 .hditem small{font-size:9px;margin-top:2px}
 .hd3 .hditem .pill{font-size:9px;padding:2px 5px}
 /* middle — conversation, tighter */
-.hd3 .hdconvhead{height:54px;padding:0 12px;display:flex;align-items:center}
-.hdlisthead{height:54px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 11px;border-bottom:1px solid var(--border);background:#fff;position:sticky;top:0;z-index:1}
+.hd3 .hdconvhead{flex:0 0 54px;height:54px;padding:0 12px;display:flex;align-items:center}
+.hdlisthead{flex:0 0 auto;height:54px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 11px;border-bottom:1px solid var(--border);background:#fff;position:sticky;top:0;z-index:1}
 .hdlisthead b{font-size:12.5px;letter-spacing:-.2px}
 .hdlisthead span{font-size:9.5px;color:#888;font-weight:600}
 .hd3 .hdconvhead h2{font-size:13.5px}
