@@ -100,14 +100,14 @@ async function startHelpdeskRealtime(){
   if(hdRT.channel||hdRT.starting)return;
   hdRT.starting=true;setRtPill('conn');
   let cfg=null;try{cfg=await api('realtime/config')}catch(e){}
-  if(!cfg||!cfg.enabled){setRtPill('dis');hdRT.starting=false;return}
+  if(!cfg||!cfg.enabled||!cfg.channel){setRtPill('dis');hdRT.starting=false;return}
   try{
     await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js');
     if(!window.supabase){setRtPill('off');hdRT.starting=false;return}
     if(!hdRT.client)hdRT.client=window.supabase.createClient(cfg.url,cfg.anonKey,{realtime:{params:{eventsPerSecond:10}}});
-    const ch=hdRT.client.channel('helpdesk-realtime');
-    ch.on('postgres_changes',{event:'INSERT',schema:'public',table:cfg.table||'helpdesk_wakeups'},e=>{
-      const p=(e&&e.new)||{};console.debug('[helpdesk-rt] wakeup',p);
+    const ch=hdRT.client.channel(cfg.channel);
+    ch.on('broadcast',{event:'msg'},e=>{
+      const p=(e&&e.payload)||{};console.debug('[helpdesk-rt] broadcast',p);
       if(p.kind==='test'){toast('Realtime OK — live connection confirmed ✓');return}
       hdRTRoute(p);
     });
@@ -129,7 +129,7 @@ function wireRtPill(){
   b.onclick=async()=>{
     try{
       const r=await api('helpdesk/rt-test',{method:'POST',body:JSON.stringify({})});
-      toast(r&&r.inserted?'Wake-up row inserted — if the connection works you will see a green confirmation in a moment…':'Unexpected test response.');
+      toast('Probe sent — if this connection works you will see a green confirmation in a moment…');
     }catch(e){toast('Realtime test failed: '+e.message)}
   };
 }
