@@ -635,3 +635,11 @@ body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{
 .rtlive.dis{color:#8a94a3;background:#eef1f4;cursor:help}
 .section-box.hdpage{position:relative}
 .rtlive{cursor:pointer}
+
+/* ---------- MESSAGE STATUS META ---------- */
+.msg time{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.mst{font-weight:700;font-size:9px;letter-spacing:.03em}
+.mst.seen{color:#1e9e6a}
+.mst.dlv,.mst.sent{color:#9aa4b2}
+.msg.me .mst.seen{color:#7de2a8}
+.msg.me .mst.dlv,.msg.me .mst.sent{color:rgba(255,255,255,.7)}
