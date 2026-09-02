@@ -283,7 +283,7 @@ export async function onRequest(context){
       if(method==='GET'){
         if(!can('tasks','show'))return denied();
         if(!taskVisible(t,s))return fail('Permission denied.',403);
-        const posts=await db(env,`task_progress?task_id=eq.${id}&select=*&order=created_at.asc&limit=1000`);
+        const posts=(await db(env,`task_progress?task_id=eq.${id}&select=*&order=created_at.asc&limit=1000`)).filter(pp=>!pp.rejected||String(pp.user_id)===String(s.id));
         return json({task:{...t,shared_with:Array.isArray(t.shared_with)?t.shared_with:[]},posts});
       }
       if(method==='PATCH'){
@@ -346,12 +346,30 @@ export async function onRequest(context){
       let [pp]=await db(env,`task_progress?id=eq.${num(b.post_id)}&task_id=eq.${id}&select=*`);
       if(!pp)return fail('Progress post not found.',404);
       if(pp.approved)return fail('This progress was already approved.');
+      if(pp.rejected)return fail('This progress was rejected.');
       await db(env,`task_progress?id=eq.${pp.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({approved:true,add_progress:add,approved_at:new Date().toISOString(),approved_by_name:await boardName(env,s)})});
       const newp=Math.min(100,num(t.progress)+add);
       await db(env,`tasks?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({progress:newp,updated_at:new Date().toISOString()})});
       if(t.visibility!=='private'&&(pp.user_kind!==(s.kind==='user'?'user':'owner')||String(pp.user_id)!==String(s.id)))
         notifyBoardTarget(env,{kind:pp.user_kind==='user'?'user':'owner',id:pp.user_id},'tasks','Progress approved: +'+add+'%',t.title.slice(0,80)+' · '+t.code+' — now '+newp+'%','tasks');
       return json({ok:true,progress:newp});
+    }
+    if(/^tasks\/[^/]+\/reject$/.test(path)&&method==='POST'){
+      const id=path.split('/')[1];
+      if(!can('tasks','edit'))return denied();
+      let [t]=await db(env,`tasks?id=eq.${id}&select=*`);
+      if(!t)return fail('Task not found.',404);
+      if(!taskAuthor(t,s))return fail('Only the task author can reject progress.',403);
+      let b=await body(request),feedback=String(b.feedback||'').trim();
+      if(!feedback)return fail('Rejection feedback is required.');
+      let [pp]=await db(env,`task_progress?id=eq.${num(b.post_id)}&task_id=eq.${id}&select=*`);
+      if(!pp)return fail('Progress post not found.',404);
+      if(pp.approved)return fail('This progress was already approved.');
+      if(pp.rejected)return fail('This progress was already rejected.');
+      await db(env,`task_progress?id=eq.${pp.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({rejected:true,rejected_at:new Date().toISOString(),reject_feedback:feedback.slice(0,500)})});
+      if(pp.user_kind!==(s.kind==='user'?'user':'owner')||String(pp.user_id)!==String(s.id))
+        notifyBoardTarget(env,{kind:pp.user_kind==='user'?'user':'owner',id:pp.user_id},'tasks','Progress rejected: '+t.title.slice(0,60),feedback.slice(0,160)+' · '+t.code,'tasks');
+      return json({ok:true});
     }
 
     /* ---------- PARTNER (agent) SELF-SERVICE ---------- */
