@@ -252,9 +252,9 @@ export async function onRequest(context){
       if(!can('tasks','show'))return denied();
       let [rows,posts,users]=await Promise.all([
         db(env,'tasks?select=*&order=created_at.desc&limit=500'),
-        db(env,'task_progress?select=task_id,approved&limit=5000'),
+        db(env,'task_progress?select=task_id,approved,rejected&limit=5000'),
         db(env,'admin_users?select=id,name&order=name.asc')]);
-      const list=rows.filter(t=>taskVisible(t,s)).map(t=>({...t,shared_with:Array.isArray(t.shared_with)?t.shared_with:[],pending:posts.filter(pp=>pp.task_id===t.id&&!pp.approved).length}));
+      const list=rows.filter(t=>taskVisible(t,s)).map(t=>({...t,shared_with:Array.isArray(t.shared_with)?t.shared_with:[],pending:posts.filter(pp=>pp.task_id===t.id&&!pp.approved&&!pp.rejected).length}));
       return json({tasks:list,users});
     }
     if(path==='tasks'&&method==='POST'){
@@ -327,6 +327,7 @@ export async function onRequest(context){
       let [t]=await db(env,`tasks?id=eq.${id}&select=*`);
       if(!t)return fail('Task not found.',404);
       if(!taskVisible(t,s))return fail('Permission denied.',403);
+      if((t.status==='inactive'||t.status==='completed')&&!taskAuthor(t,s))return fail('This task is '+t.status+' — only the author can post updates.',403);
       let b=await body(request),note=String(b.note||'').trim();
       if(!note)return fail('Progress note cannot be empty.');
       const poster=await boardName(env,s);
