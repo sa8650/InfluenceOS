@@ -127,6 +127,7 @@ async function startHelpdeskRealtime(){
     ch.on('broadcast',{event:'msg'},e=>{
       const p=(e&&e.payload)||{};console.debug('[helpdesk-rt] broadcast',p);
       if(p.kind==='test'){toast('Realtime OK — live connection confirmed ✓');return}
+      if(p.kind==='notif'){playPing();refreshNotifs();return}
       if(!hdRTIsOwn(p))playPing();
       hdRTRoute(p);
     });
@@ -1139,6 +1140,7 @@ async function taskDetailModal(id){
       });
       const eb=ov.querySelector('#tdEdit');if(eb)eb.onclick=()=>{ov.remove();taskFormModal(t)};
       const dbx=ov.querySelector('#tdDel');if(dbx)dbx.onclick=async()=>{if(!confirm('Delete this task and all its progress posts?'))return;try{await mutate('tasks/'+id,{method:'DELETE'});ov.remove();toast('Task deleted.');renderAdmin()}catch(e){toast(e.message)}};
+      body.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>ov.remove());
     }catch(e){body.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
   };
   await draw();
