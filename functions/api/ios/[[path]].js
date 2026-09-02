@@ -283,7 +283,7 @@ export async function onRequest(context){
       if(method==='GET'){
         if(!can('tasks','show'))return denied();
         if(!taskVisible(t,s))return fail('Permission denied.',403);
-        const posts=(await db(env,`task_progress?task_id=eq.${id}&select=*&order=created_at.asc&limit=1000`)).filter(pp=>!pp.rejected||String(pp.user_id)===String(s.id));
+        const posts=(await db(env,`task_progress?task_id=eq.${id}&select=*&order=created_at.asc&limit=1000`)).filter(pp=>!pp.rejected||String(pp.user_id)===String(s.id)||taskAuthor(t,s));
         return json({task:{...t,shared_with:Array.isArray(t.shared_with)?t.shared_with:[]},posts});
       }
       if(method==='PATCH'){
@@ -342,7 +342,9 @@ export async function onRequest(context){
       if(!t)return fail('Task not found.',404);
       if(!taskAuthor(t,s))return fail('Only the task author can approve progress.',403);
       let b=await body(request),add=Math.round(num(b.add));
-      if(!(add>0&&add<=100))return fail('Progress award must be between 1 and 100.');
+      if(!(add>=0&&add<=100))return fail('Progress award must be between 0 and 100.');
+      const remain=100-num(t.progress);
+      if(add>remain)return fail('Only '+remain+'% remaining — you cannot award '+add+'%.');
       let [pp]=await db(env,`task_progress?id=eq.${num(b.post_id)}&task_id=eq.${id}&select=*`);
       if(!pp)return fail('Progress post not found.',404);
       if(pp.approved)return fail('This progress was already approved.');
@@ -351,7 +353,7 @@ export async function onRequest(context){
       const newp=Math.min(100,num(t.progress)+add);
       await db(env,`tasks?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({progress:newp,updated_at:new Date().toISOString()})});
       if(t.visibility!=='private'&&(pp.user_kind!==(s.kind==='user'?'user':'owner')||String(pp.user_id)!==String(s.id)))
-        notifyBoardTarget(env,{kind:pp.user_kind==='user'?'user':'owner',id:pp.user_id},'tasks','Progress approved: +'+add+'%',t.title.slice(0,80)+' · '+t.code+' — now '+newp+'%','tasks');
+        notifyBoardTarget(env,{kind:pp.user_kind==='user'?'user':'owner',id:pp.user_id},'tasks','Progress approved'+(add>0?': +'+add+'%':''),t.title.slice(0,80)+' · '+t.code+' — now '+newp+'%','tasks');
       return json({ok:true,progress:newp});
     }
     if(/^tasks\/[^/]+\/reject$/.test(path)&&method==='POST'){
