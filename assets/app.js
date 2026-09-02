@@ -1121,13 +1121,13 @@ async function taskDetailModal(id){
         <div class="meta"><span>Progress</span><b>${t.progress}%</b></div>
         <div class="progress"><i style="width:${Math.min(100,t.progress)}%"></i></div>
         ${t.details?`<p style="font-size:12.5px;line-height:1.6;color:#444;margin:10px 0 0">${esc(t.details)}</p>`:''}
-        <div class="section-head" style="margin-top:14px"><h2>Progress updates</h2><span class="muted">${posts.filter(pp=>pp.approved).length} approved · everyone with access sees approved posts</span></div>
+        <div class="section-head" style="margin-top:14px"><h2>Progress updates</h2><span class="muted">${posts.filter(pp=>pp.approved).length} approved · rejected posts visible only to poster &amp; author</span></div>
         <div class="tposts">${posts.length?posts.map(pp=>`
           <div class="tpost ${pp.approved?'ok':''}${pp.rejected?'rej':''}">
-            <div class="tp-head"><b>${esc(pp.user_name)}</b>${pp.approved?`<span class="pill green">+${num(pp.add_progress)}%${pp.approved_by_name?' · by '+esc(pp.approved_by_name):''}</span>`:pp.rejected?'<span class="pill red">Rejected</span>':'<span class="pill yellow">Pending</span>'}<time>${fmtDT(pp.created_at)}</time></div>
+            <div class="tp-head"><b>${esc(pp.user_name)}</b>${pp.approved?`<span class="pill green">${num(pp.add_progress)>0?'+'+num(pp.add_progress)+'%':'accepted'}${pp.approved_by_name?' · by '+esc(pp.approved_by_name):''}</span>`:pp.rejected?'<span class="pill red">Rejected</span>':'<span class="pill yellow">Pending</span>'}<time>${fmtDT(pp.created_at)}</time></div>
             <p>${esc(pp.note)}</p>
             ${pp.rejected&&pp.reject_feedback?`<p class="tp-fb">↳ ${esc(pp.reject_feedback)}</p>`:''}
-            ${!pp.approved&&!pp.rejected&&author&&can('tasks','edit')?`<div class="tp-act"><input type="number" min="1" max="100" placeholder="% e.g. 10" data-add="${pp.id}"><button class="btn small dark" data-approve="${pp.id}">Approve</button><button class="btn small danger" data-reject="${pp.id}">Reject</button></div>`:''}
+            ${!pp.approved&&!pp.rejected&&author&&can('tasks','edit')?`<div class="tp-act">${num(t.progress)<100?`<input type="number" min="1" max="${Math.max(1,100-num(t.progress))}" placeholder="% e.g. 10" data-add="${pp.id}">`:''}<button class="btn small dark" data-approve="${pp.id}">${num(t.progress)>=100?'Accept':'Approve'}</button><button class="btn small danger" data-reject="${pp.id}">Reject</button></div>`:''}
           </div>`).join(''):'<div class="empty">No progress posts yet.</div>'}</div>
         <div class="field" style="margin-top:12px"><label>Post your progress</label><textarea id="tdNote" rows="2" placeholder="What did you complete?"></textarea></div>
         <div class="modal-actions">
@@ -1136,7 +1136,7 @@ async function taskDetailModal(id){
           <button class="btn" data-close>Close</button>
           <button class="btn dark" id="tdPost">Post progress</button>
         </div>`;
-      ov.querySelector('#tdPost').onclick=async()=>{const ta=ov.querySelector('#tdNote');const note=ta.value.trim();if(!note)return toast('Write something first.');try{await mutate('tasks/'+id+'/progress',{method:'POST',body:JSON.stringify({note})});toast('Progress posted for approval.');draw()}catch(e){toast(e.message)}};
+      ov.querySelector('#tdPost').onclick=async()=>{const ta=ov.querySelector('#tdNote');const btn=ov.querySelector('#tdPost');const note=ta.value.trim();if(!note)return toast('Write something first.');btn.disabled=true;btn.textContent='Posting…';try{await mutate('tasks/'+id+'/progress',{method:'POST',body:JSON.stringify({note})});toast('Progress posted for approval.');draw()}catch(e){toast(e.message);btn.disabled=false;btn.textContent='Post progress'}};
       body.querySelectorAll('[data-reject]').forEach(b=>b.onclick=async()=>{
         const fb=prompt('Feedback for rejection (required):');if(fb===null)return;
         const feedback=fb.trim();if(!feedback)return toast('Feedback is required to reject.');
@@ -1144,9 +1144,11 @@ async function taskDetailModal(id){
       });
       body.querySelectorAll('[data-approve]').forEach(b=>b.onclick=async()=>{
         const inp=body.querySelector('[data-add="'+b.dataset.approve+'"]');
-        const add=Math.round(num(inp&&inp.value));
-        if(!(add>0&&add<=100))return toast('Enter a % between 1 and 100.');
-        try{const r=await mutate('tasks/'+id+'/approve',{method:'POST',body:JSON.stringify({post_id:Number(b.dataset.approve),add})});toast('Approved — task progress now '+(r.progress||0)+'%.');draw()}catch(e){toast(e.message)}
+        const remain=Math.max(0,100-num(t.progress));
+        const add=inp?Math.round(num(inp.value)):0;
+        if(inp&&add>remain)return alert('Only '+remain+'% remaining — you cannot award '+add+'%.');
+        if(inp&&!(add>=1))return alert('Enter a % between 1 and '+remain+' to approve.');
+        try{const r=await mutate('tasks/'+id+'/approve',{method:'POST',body:JSON.stringify({post_id:Number(b.dataset.approve),add})});toast(add>0?'Approved — task progress now '+(r.progress||0)+'%.':'Accepted — task already at 100%.');draw()}catch(e){alert(e.message)}
       });
       const eb=ov.querySelector('#tdEdit');if(eb)eb.onclick=()=>{ov.remove();taskFormModal(t)};
       const dbx=ov.querySelector('#tdDel');if(dbx)dbx.onclick=async()=>{if(!confirm('Delete this task and all its progress posts?'))return;try{await mutate('tasks/'+id,{method:'DELETE'});ov.remove();toast('Task deleted.');renderAdmin()}catch(e){toast(e.message)}};
