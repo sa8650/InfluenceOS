@@ -26,7 +26,8 @@ const PERM_MODULES={
   performance:['show'],
   vaultium:['show','delete','download','view'],
   connectx:['show','compose','settings','history'],
-  users:['show','add','edit','delete']
+  users:['show','add','edit','delete'],
+  tasks:['show','add','edit','delete']
 };
 const FULL_PERMS=Object.fromEntries(Object.entries(PERM_MODULES).map(([m,acts])=>[m,Object.fromEntries(acts.map(a=>[a,true]))]));
 /* ---------- NOTIFICATIONS (admin & agent inboxes) ---------- */
@@ -232,6 +233,110 @@ export async function onRequest(context){
         const c=await hdRTChannels(env,s);
         return json({enabled:!!(env.IOS_SUPABASE_URL&&env.IOS_SUPABASE_ANON_KEY&&c.channel),url:env.IOS_SUPABASE_URL||null,anonKey:env.IOS_SUPABASE_ANON_KEY||null,channel:c.channel});
       }catch(e){return json({enabled:false,url:env.IOS_SUPABASE_URL||null,anonKey:env.IOS_SUPABASE_ANON_KEY||null,channel:null})}
+    }
+
+    /* ---------- ADMIN: TASK MANAGER ---------- */
+    const TASK_STATUSES=['active','progress','inactive','completed'];
+    const TASK_PRIOS=['low','medium','high'];
+    const TASK_VIS=['private','public','shared'];
+    const taskAuthor=(t,ses)=>ses.kind==='user'?(t.created_by_kind==='user'&&String(t.created_by_id)===String(ses.id)):(t.created_by_kind==='owner'&&String(t.created_by_id)===String(ses.id));
+    const taskVisible=(t,ses)=>ses.kind!=='user'||taskAuthor(t,ses)||t.visibility==='public'||(t.visibility==='shared'&&Array.isArray(t.shared_with)&&t.shared_with.map(String).includes(String(ses.id)));
+    const boardName=async(env,ses)=>{const [m]=await db(env,(ses.kind==='user'?'admin_users?id=eq.':'admins?id=eq.')+ses.id+'&select=name');return (m&&m.name)||'Admin'};
+
+    if(path==='tasks'&&method==='GET'){
+      if(!can('tasks','show'))return denied();
+      let [rows,posts,users]=await Promise.all([
+        db(env,'tasks?select=*&order=created_at.desc&limit=500'),
+        db(env,'task_progress?select=task_id,approved&limit=5000'),
+        db(env,'admin_users?select=id,name&order=name.asc')]);
+      const list=rows.filter(t=>taskVisible(t,s)).map(t=>({...t,shared_with:Array.isArray(t.shared_with)?t.shared_with:[],pending:posts.filter(pp=>pp.task_id===t.id&&!pp.approved).length}));
+      return json({tasks:list,users});
+    }
+    if(path==='tasks'&&method==='POST'){
+      if(!can('tasks','add'))return denied();
+      let b=await body(request);
+      const title=String(b.title||'').trim();if(!title)return fail('Title is required.');
+      if(String(b.details||'').length>4000)return fail('Details are too long (max 4000).');
+      const status=TASK_STATUSES.includes(b.status)?b.status:'active';
+      const priority=TASK_PRIOS.includes(b.priority)?b.priority:'medium';
+      const visibility=TASK_VIS.includes(b.visibility)?b.visibility:'private';
+      let shared=Array.isArray(b.shared_with)?b.shared_with.map(x=>String(x)).filter(Boolean):[];
+      if(visibility==='shared'&&!shared.length)return fail('Select at least one board user to share with.');
+      if(visibility!=='shared')shared=[];
+      let code;for(let i=0;i<15;i++){const c='TSK-'+Array.from(crypto.getRandomValues(new Uint8Array(4))).map(n=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[n%32]).join('');const used=await db(env,`tasks?code=eq.${c}&select=id`);if(!used.length){code=c;break}}
+      if(!code)return fail('Could not generate a Task ID — try again.');
+      const [out]=await db(env,'tasks',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code,title:title.slice(0,160),status,priority,visibility,shared_with:shared,details:b.details?String(b.details).slice(0,4000):null,created_by_kind:s.kind==='user'?'user':'owner',created_by_id:s.id,created_by_name:await boardName(env,s)})});
+      return json(out,201);
+    }
+    if(/^tasks\/[^/]+$/.test(path)&&(method==='GET'||method==='PATCH'||method==='DELETE')){
+      const id=path.split('/')[1];
+      let [t]=await db(env,`tasks?id=eq.${id}&select=*`);
+      if(!t)return fail('Task not found.',404);
+      if(method==='GET'){
+        if(!can('tasks','show'))return denied();
+        if(!taskVisible(t,s))return fail('Permission denied.',403);
+        const posts=await db(env,`task_progress?task_id=eq.${id}&select=*&order=created_at.asc&limit=1000`);
+        return json({task:{...t,shared_with:Array.isArray(t.shared_with)?t.shared_with:[]},posts});
+      }
+      if(method==='PATCH'){
+        if(!can('tasks','edit'))return denied();
+        if(!taskAuthor(t,s))return fail('Only the task author can edit it.',403);
+        let b=await body(request),patch={};
+        if(b.title!==undefined){const v=String(b.title).trim();if(!v)return fail('Title cannot be empty.');patch.title=v.slice(0,160)}
+        if(b.status!==undefined){if(!TASK_STATUSES.includes(b.status))return fail('Invalid status.');patch.status=b.status}
+        if(b.priority!==undefined){if(!TASK_PRIOS.includes(b.priority))return fail('Invalid priority.');patch.priority=b.priority}
+        if(b.details!==undefined)patch.details=b.details?String(b.details).slice(0,4000):null;
+        if(b.visibility!==undefined){
+          if(!TASK_VIS.includes(b.visibility))return fail('Invalid visibility.');
+          patch.visibility=b.visibility;
+          if(b.visibility==='shared'){
+            const sh=Array.isArray(b.shared_with)?b.shared_with.map(x=>String(x)).filter(Boolean):[];
+            if(!sh.length)return fail('Select at least one board user to share with.');
+            patch.shared_with=sh;
+          }else patch.shared_with=[];
+        }else if(b.shared_with!==undefined&&t.visibility==='shared'){
+          const sh=Array.isArray(b.shared_with)?b.shared_with.map(x=>String(x)).filter(Boolean):[];
+          if(!sh.length)return fail('Select at least one board user to share with.');
+          patch.shared_with=sh;
+        }
+        patch.updated_at=new Date().toISOString();
+        await db(env,`tasks?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
+        return json({ok:true});
+      }
+      if(method==='DELETE'){
+        if(!can('tasks','delete'))return denied();
+        if(!taskAuthor(t,s))return fail('Only the task author can delete it.',403);
+        await db(env,`task_progress?task_id=eq.${id}`,{method:'DELETE'});
+        await db(env,`tasks?id=eq.${id}`,{method:'DELETE'});
+        return json({ok:true});
+      }
+    }
+    if(/^tasks\/[^/]+\/progress$/.test(path)&&method==='POST'){
+      const id=path.split('/')[1];
+      if(!can('tasks','show'))return denied();
+      let [t]=await db(env,`tasks?id=eq.${id}&select=*`);
+      if(!t)return fail('Task not found.',404);
+      if(!taskVisible(t,s))return fail('Permission denied.',403);
+      let b=await body(request),note=String(b.note||'').trim();
+      if(!note)return fail('Progress note cannot be empty.');
+      const [out]=await db(env,'task_progress',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({task_id:Number(id),user_kind:s.kind==='user'?'user':'owner',user_id:s.id,user_name:await boardName(env,s),note:note.slice(0,2000)})});
+      return json(out,201);
+    }
+    if(/^tasks\/[^/]+\/approve$/.test(path)&&method==='POST'){
+      const id=path.split('/')[1];
+      if(!can('tasks','edit'))return denied();
+      let [t]=await db(env,`tasks?id=eq.${id}&select=*`);
+      if(!t)return fail('Task not found.',404);
+      if(!taskAuthor(t,s))return fail('Only the task author can approve progress.',403);
+      let b=await body(request),add=Math.round(num(b.add));
+      if(!(add>0&&add<=100))return fail('Progress award must be between 1 and 100.');
+      let [pp]=await db(env,`task_progress?id=eq.${num(b.post_id)}&task_id=eq.${id}&select=*`);
+      if(!pp)return fail('Progress post not found.',404);
+      if(pp.approved)return fail('This progress was already approved.');
+      await db(env,`task_progress?id=eq.${pp.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({approved:true,add_progress:add,approved_at:new Date().toISOString(),approved_by_name:await boardName(env,s)})});
+      const newp=Math.min(100,num(t.progress)+add);
+      await db(env,`tasks?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({progress:newp,updated_at:new Date().toISOString()})});
+      return json({ok:true,progress:newp});
     }
 
     /* ---------- PARTNER (agent) SELF-SERVICE ---------- */
