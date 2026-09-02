@@ -114,6 +114,13 @@ function hdRTDispatch(p){
 }
 const hdRTRoute=hdRTDebounce(hdRTDispatch);
 const msgStatus=seen=>seen?'<span class="mst seen">Seen</span>':(hdRT.state==='live'?'<span class="mst dlv">Delivered</span>':'<span class="mst sent">Sent</span>');
+function handleRTBroadcast(p){
+  if(p.kind==='test'){toast('Realtime OK — live connection confirmed ✓');return}
+  if(p.kind==='notif'){playPing();refreshNotifs();return}
+  if(!hdRTIsOwn(p))playPing();
+  hdRTRoute(p);
+}
+window.handleRTBroadcast=handleRTBroadcast;
 async function startHelpdeskRealtime(){
   if(hdRT.channel||hdRT.starting)return;
   hdRT.starting=true;setRtPill('conn');
@@ -126,10 +133,7 @@ async function startHelpdeskRealtime(){
     const ch=hdRT.client.channel(cfg.channel);
     ch.on('broadcast',{event:'msg'},e=>{
       const p=(e&&e.payload)||{};console.debug('[helpdesk-rt] broadcast',p);
-      if(p.kind==='test'){toast('Realtime OK — live connection confirmed ✓');return}
-      if(p.kind==='notif'){playPing();refreshNotifs();return}
-      if(!hdRTIsOwn(p))playPing();
-      hdRTRoute(p);
+      handleRTBroadcast(p);
     });
     ch.subscribe(st=>{
       if(st==='SUBSCRIBED')setRtPill('live');
@@ -1119,10 +1123,11 @@ async function taskDetailModal(id){
         ${t.details?`<p style="font-size:12.5px;line-height:1.6;color:#444;margin:10px 0 0">${esc(t.details)}</p>`:''}
         <div class="section-head" style="margin-top:14px"><h2>Progress updates</h2><span class="muted">${posts.filter(pp=>pp.approved).length} approved · everyone with access sees approved posts</span></div>
         <div class="tposts">${posts.length?posts.map(pp=>`
-          <div class="tpost ${pp.approved?'ok':''}">
-            <div class="tp-head"><b>${esc(pp.user_name)}</b>${pp.approved?`<span class="pill green">+${num(pp.add_progress)}%${pp.approved_by_name?' · by '+esc(pp.approved_by_name):''}</span>`:'<span class="pill yellow">Pending</span>'}<time>${fmtDT(pp.created_at)}</time></div>
+          <div class="tpost ${pp.approved?'ok':''}${pp.rejected?'rej':''}">
+            <div class="tp-head"><b>${esc(pp.user_name)}</b>${pp.approved?`<span class="pill green">+${num(pp.add_progress)}%${pp.approved_by_name?' · by '+esc(pp.approved_by_name):''}</span>`:pp.rejected?'<span class="pill red">Rejected</span>':'<span class="pill yellow">Pending</span>'}<time>${fmtDT(pp.created_at)}</time></div>
             <p>${esc(pp.note)}</p>
-            ${!pp.approved&&author&&can('tasks','edit')?`<div class="tp-act"><input type="number" min="1" max="100" placeholder="% e.g. 10" data-add="${pp.id}"><button class="btn small dark" data-approve="${pp.id}">Approve</button></div>`:''}
+            ${pp.rejected&&pp.reject_feedback?`<p class="tp-fb">↳ ${esc(pp.reject_feedback)}</p>`:''}
+            ${!pp.approved&&!pp.rejected&&author&&can('tasks','edit')?`<div class="tp-act"><input type="number" min="1" max="100" placeholder="% e.g. 10" data-add="${pp.id}"><button class="btn small dark" data-approve="${pp.id}">Approve</button><button class="btn small danger" data-reject="${pp.id}">Reject</button></div>`:''}
           </div>`).join(''):'<div class="empty">No progress posts yet.</div>'}</div>
         <div class="field" style="margin-top:12px"><label>Post your progress</label><textarea id="tdNote" rows="2" placeholder="What did you complete?"></textarea></div>
         <div class="modal-actions">
@@ -1132,6 +1137,11 @@ async function taskDetailModal(id){
           <button class="btn dark" id="tdPost">Post progress</button>
         </div>`;
       ov.querySelector('#tdPost').onclick=async()=>{const ta=ov.querySelector('#tdNote');const note=ta.value.trim();if(!note)return toast('Write something first.');try{await mutate('tasks/'+id+'/progress',{method:'POST',body:JSON.stringify({note})});toast('Progress posted for approval.');draw()}catch(e){toast(e.message)}};
+      body.querySelectorAll('[data-reject]').forEach(b=>b.onclick=async()=>{
+        const fb=prompt('Feedback for rejection (required):');if(fb===null)return;
+        const feedback=fb.trim();if(!feedback)return toast('Feedback is required to reject.');
+        try{await mutate('tasks/'+id+'/reject',{method:'POST',body:JSON.stringify({post_id:Number(b.dataset.reject),feedback})});toast('Progress rejected.');draw()}catch(e){toast(e.message)}
+      });
       body.querySelectorAll('[data-approve]').forEach(b=>b.onclick=async()=>{
         const inp=body.querySelector('[data-add="'+b.dataset.approve+'"]');
         const add=Math.round(num(inp&&inp.value));
