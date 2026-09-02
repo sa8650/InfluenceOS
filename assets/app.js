@@ -1115,6 +1115,7 @@ async function taskDetailModal(id){
       const d=await api('tasks/'+id);
       const t=d.task,posts=d.posts||[];
       const author=(state.user&&state.user.kind==='user')?(t.created_by_kind==='user'&&String(t.created_by_id)===String(state.user.id)):(t.created_by_kind!=='user'&&String(t.created_by_id)===String(state.user.id));
+      const closed=t.status==='inactive'||t.status==='completed';
       body.innerHTML=`
         <div class="detail-head"><div><h2 style="font-size:17px">${esc(t.title)}</h2><p>${esc(t.code)} · by ${esc(t.created_by_name)} · ${fmtDT(t.created_at)}</p></div>${pill(TASK_STATUS,t.status)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${pill(TASK_PRIO,t.priority)}${pill(TASK_VIS,t.visibility)}${t.visibility==='shared'?`<span class="pill blue">${(t.shared_with||[]).length} shared</span>`:''}</div>
@@ -1129,14 +1130,14 @@ async function taskDetailModal(id){
             ${pp.rejected&&pp.reject_feedback?`<p class="tp-fb">↳ ${esc(pp.reject_feedback)}</p>`:''}
             ${!pp.approved&&!pp.rejected&&author&&can('tasks','edit')?`<div class="tp-act">${num(t.progress)<100?`<input type="number" min="1" max="${Math.max(1,100-num(t.progress))}" placeholder="% e.g. 10" data-add="${pp.id}">`:''}<button class="btn small dark" data-approve="${pp.id}">${num(t.progress)>=100?'Accept':'Approve'}</button><button class="btn small danger" data-reject="${pp.id}">Reject</button></div>`:''}
           </div>`).join(''):'<div class="empty">No progress posts yet.</div>'}</div>
-        <div class="field" style="margin-top:12px"><label>Post your progress</label><textarea id="tdNote" rows="2" placeholder="What did you complete?"></textarea></div>
+        ${closed&&!author?`<p class="muted" style="margin:12px 0 0">Task is ${t.status} — only the author can post updates.</p>`:'<div class="field" style="margin-top:12px"><label>Post your progress</label><textarea id="tdNote" rows="2" placeholder="What did you complete?"></textarea></div>'}
         <div class="modal-actions">
           ${author&&can('tasks','edit')?'<button class="btn" id="tdEdit">Edit task</button>':''}
           ${author&&can('tasks','delete')?'<button class="btn danger" id="tdDel">Delete</button>':''}
           <button class="btn" data-close>Close</button>
-          <button class="btn dark" id="tdPost">Post progress</button>
+          ${closed&&!author?'':'<button class="btn dark" id="tdPost">Post progress</button>'}
         </div>`;
-      ov.querySelector('#tdPost').onclick=async()=>{const ta=ov.querySelector('#tdNote');const btn=ov.querySelector('#tdPost');const note=ta.value.trim();if(!note)return toast('Write something first.');btn.disabled=true;btn.textContent='Posting…';try{await mutate('tasks/'+id+'/progress',{method:'POST',body:JSON.stringify({note})});toast('Progress posted for approval.');draw()}catch(e){toast(e.message);btn.disabled=false;btn.textContent='Post progress'}};
+      const pb=ov.querySelector('#tdPost');if(pb)pb.onclick=async()=>{const ta=ov.querySelector('#tdNote');const btn=ov.querySelector('#tdPost');const note=ta.value.trim();if(!note)return toast('Write something first.');btn.disabled=true;btn.textContent='Posting…';try{await mutate('tasks/'+id+'/progress',{method:'POST',body:JSON.stringify({note})});toast('Progress posted for approval.');draw()}catch(e){toast(e.message);btn.disabled=false;btn.textContent='Post progress'}};
       body.querySelectorAll('[data-reject]').forEach(b=>b.onclick=async()=>{
         const fb=prompt('Feedback for rejection (required):');if(fb===null)return;
         const feedback=fb.trim();if(!feedback)return toast('Feedback is required to reject.');
