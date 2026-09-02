@@ -1,0 +1,798 @@
+/* ═══════════════════════════════════════════════════════════════════
+   FORGE UI KIT — provided by the owner ("forge ui" spec).
+   PART 1 holds the 26 Forge components (.forge-*) exactly as delivered —
+   global-ready, currently used by the agent portal.
+   PART 2 re-skins the agent dashboard with the Forge look. Those overrides
+   are scoped to body.partner-mode — the admin dashboard and the landing
+   page are completely untouched.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Inter was loaded by the previous theme for the WHOLE app (admin included) —
+   kept here so removing the old file changes nothing outside the agent portal. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+
+/* ── Forge tokens (kit palette) ── */
+:root{
+  --color-ink:#0b0b0c;            /* page void */
+  --color-graphite:#131315;       /* panels */
+  --color-slate:#1b1b1e;          /* wells, inputs */
+  --color-filament:#26262a;
+  --color-border:#26262a;
+  --color-border-strong:#2f2f34;
+  --color-text:#f2f2f3;
+  --color-text-muted:#8b8b92;
+  --color-ash-soft:#5a5a60;
+  --color-accent:#f65a1a;         /* ember */
+  --color-spark:#ff7a38;
+  --color-ember-halo:rgba(246,90,26,.24);
+  --color-edge-highlight:rgba(255,255,255,.03);
+  --color-online:#3dd68c;
+  --color-success:#3dd68c;
+  --color-warning:#f5a623;
+  --color-offline:#e74c3c;
+  --color-danger:#e74c3c;
+  --color-error:#e74c3c;
+  --space-2xs:4px;--space-xs:8px;--space-sm:12px;--space-md:16px;--space-lg:24px;
+  --radius-sm:2px;--radius-md:4px;--radius-full:999px;
+  --duration-fast:120ms;--duration-base:200ms;
+  --ease-out:cubic-bezier(0.2,0.65,0.25,1);
+}
+
+/* ═══════════════ PART 1 — FORGE COMPONENTS (as provided) ═══════════════ */
+
+/* 1 · button */
+.forge-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:var(--space-xs);
+  height:40px;padding:0 var(--space-md);border-radius:var(--radius-md);
+  border:1px solid transparent;background:transparent;color:var(--color-text);
+  font-family:inherit;font-size:14px;font-weight:600;letter-spacing:.04em;
+  text-transform:uppercase;cursor:pointer;user-select:none;
+  transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out);
+}
+.forge-btn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+.forge-btn--primary{background:var(--color-accent);color:var(--color-ink);border-color:var(--color-accent)}
+.forge-btn--primary:hover{background:var(--color-spark);border-color:var(--color-spark)}
+.forge-btn--secondary{background:transparent;color:var(--color-text-muted);border-color:var(--color-border)}
+.forge-btn--secondary:hover{color:var(--color-text);border-color:var(--color-border-strong)}
+.forge-btn--danger{background:var(--color-danger);color:#fff;border-color:var(--color-danger)}
+.forge-btn--danger:hover{filter:brightness(1.1)}
+.forge-btn--small{height:28px;padding:0 var(--space-sm);font-size:11px}
+.forge-btn__icon{width:14px;height:14px;flex-shrink:0}
+
+/* 2 · input field */
+.forge-field{display:block;max-width:400px;font-family:ui-monospace,monospace}
+.forge-field__label{display:block;font-size:11px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--color-text-muted);margin-bottom:var(--space-xs)}
+.forge-field__input{width:100%;height:40px;padding:0 var(--space-sm);background:var(--color-slate);
+  border:1px solid var(--color-border);border-radius:var(--radius-md);color:var(--color-text);
+  font-family:inherit;font-size:14px;font-weight:500;outline:none;
+  transition:border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
+.forge-field__input::placeholder{color:var(--color-ash-soft);font-weight:400}
+.forge-field__input:hover{border-color:var(--color-border-strong)}
+.forge-field__input:focus{border-color:var(--color-accent);box-shadow:0 0 0 2px var(--color-ember-halo);background:var(--color-graphite)}
+.forge-field__hint{display:block;margin-top:var(--space-2xs);font-size:13px;color:var(--color-text-muted)}
+
+/* 3 · panel card (spec) */
+.forge-spec{width:320px;background:var(--color-graphite);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);box-shadow:inset 0 1px 0 var(--color-edge-highlight);overflow:hidden}
+.forge-spec__bar{display:flex;align-items:center;gap:var(--space-sm);padding:var(--space-sm) var(--space-md);
+  border-bottom:1px solid var(--color-border);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)}
+.forge-spec__id{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;
+  padding:0 4px;border-radius:var(--radius-sm);background:var(--color-accent);color:var(--color-ink);
+  font-family:ui-monospace,monospace;font-size:11px;font-weight:600;letter-spacing:.04em}
+.forge-spec__title{flex:1;font-family:ui-monospace,monospace;font-size:11px;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--color-text)}
+.forge-spec__status{font-family:ui-monospace,monospace;font-size:11px;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--color-text-muted);padding:2px 8px;border:1px solid var(--color-border);
+  border-radius:var(--radius-sm)}
+.forge-spec__status--live{color:var(--color-accent);border-color:var(--color-accent)}
+.forge-spec__body{padding:var(--space-lg)}
+.forge-spec__eyebrow{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--color-text-muted);margin-bottom:var(--space-xs)}
+.forge-spec__figure{font-size:40px;font-weight:700;letter-spacing:-.02em;color:var(--color-text);
+  line-height:1.05;margin-bottom:var(--space-md)}
+.forge-spec__unit{font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;
+  color:var(--color-text-muted);margin-left:8px;text-transform:uppercase}
+.forge-spec__tags{display:flex;gap:6px;flex-wrap:wrap}
+.forge-spec__tag{display:inline-flex;align-items:center;height:22px;padding:0 var(--space-xs);
+  border-radius:var(--radius-sm);border:1px solid var(--color-border);color:var(--color-text-muted);
+  font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.forge-spec__tag--accent{border-color:var(--color-accent);color:var(--color-accent)}
+
+/* 4 · checkbox */
+.forge-check{display:inline-flex;align-items:center;gap:var(--space-sm);cursor:pointer;user-select:none;
+  font-family:inherit;font-size:14px;color:var(--color-text)}
+.forge-check input[type="checkbox"]{appearance:none;-webkit-appearance:none;width:18px;height:18px;flex-shrink:0;
+  background:var(--color-slate);border:1px solid var(--color-border);border-radius:var(--radius-sm);
+  cursor:pointer;position:relative;display:inline-grid;place-content:center;
+  transition:background var(--duration-fast) var(--ease-out),border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out)}
+.forge-check input[type="checkbox"]::before{content:"";width:10px;height:10px;transform:scale(0);
+  transition:transform var(--duration-fast) var(--ease-out);background:var(--color-ink);
+  clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0%,43% 62%)}
+.forge-check input[type="checkbox"]:checked{background:var(--color-accent);border-color:var(--color-accent)}
+.forge-check input[type="checkbox"]:checked::before{transform:scale(1)}
+.forge-check input[type="checkbox"]:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+
+/* 5 · toggle */
+.forge-toggle{position:relative;display:inline-flex;align-items:center;gap:var(--space-sm);cursor:pointer;
+  user-select:none;font-family:inherit;font-size:14px;color:var(--color-text)}
+.forge-toggle input[type="checkbox"]{appearance:none;-webkit-appearance:none;position:relative;width:40px;
+  height:22px;flex-shrink:0;background:var(--color-slate);border:1px solid var(--color-border);
+  border-radius:var(--radius-full);cursor:pointer;
+  transition:background var(--duration-base) var(--ease-out),border-color var(--duration-base) var(--ease-out)}
+.forge-toggle input[type="checkbox"]::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+  background:var(--color-text-muted);border-radius:var(--radius-full);
+  transition:transform var(--duration-base) var(--ease-out),background var(--duration-base) var(--ease-out)}
+.forge-toggle input[type="checkbox"]:checked{background:var(--color-accent);border-color:var(--color-accent)}
+.forge-toggle input[type="checkbox"]:checked::after{transform:translateX(18px);background:var(--color-ink)}
+.forge-toggle input[type="checkbox"]:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+
+/* 6 · tabs (table list) */
+.forge-tabs{display:flex;gap:var(--space-lg);border-bottom:1px solid var(--color-border)}
+.forge-tabs__tab{position:relative;background:transparent;border:0;padding:var(--space-sm) 0;
+  font-family:ui-monospace,monospace;font-size:11px;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--color-text-muted);cursor:pointer;transition:color var(--duration-fast) var(--ease-out)}
+.forge-tabs__tab::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:transparent;
+  transition:background var(--duration-fast) var(--ease-out)}
+.forge-tabs__tab:hover{color:var(--color-text)}
+.forge-tabs__tab.is-active{color:var(--color-text)}
+.forge-tabs__tab.is-active::after{background:var(--color-accent)}
+.forge-tabs__num{color:var(--color-accent);margin-right:6px}
+
+/* 7 · pagination */
+.forge-page{display:inline-flex;align-items:center;gap:var(--space-2xs);font-family:ui-monospace,monospace;font-size:11px}
+.forge-page__btn{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;
+  padding:0 var(--space-2xs);border:1px solid var(--color-border);border-radius:var(--radius-sm);
+  background:transparent;color:var(--color-text-muted);cursor:pointer;letter-spacing:.04em;
+  text-transform:uppercase;font-family:inherit;font-size:inherit;
+  transition:color var(--duration-fast) var(--ease-out),border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out)}
+.forge-page__btn:hover{color:var(--color-text);border-color:var(--color-border-strong)}
+.forge-page__btn.is-active{color:var(--color-ink);background:var(--color-accent);border-color:var(--color-accent)}
+
+/* 8 · loader */
+.forge-loader{display:inline-flex;flex-direction:column;align-items:center;gap:12px}
+.forge-loader__bars{display:flex;align-items:flex-end;gap:4px;height:32px}
+.forge-loader__bar{width:4px;background:var(--color-filament);border-radius:1px;
+  animation:forge-pulse 1.2s ease-in-out infinite}
+.forge-loader__bar:nth-child(1){height:40%;animation-delay:0s}
+.forge-loader__bar:nth-child(2){height:65%;animation-delay:.15s}
+.forge-loader__bar:nth-child(3){height:100%;animation-delay:.3s}
+.forge-loader__bar:nth-child(4){height:55%;animation-delay:.45s}
+.forge-loader__bar:nth-child(5){height:80%;animation-delay:.6s}
+.forge-loader__label{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--color-text-muted)}
+@keyframes forge-pulse{
+  0%,100%{background:var(--color-filament);transform:scaleY(.6)}
+  50%{background:var(--color-accent);transform:scaleY(1);box-shadow:0 0 12px rgba(246,90,26,.45)}
+}
+@media (prefers-reduced-motion:reduce){.forge-loader__bar{animation:none;background:var(--color-accent)}}
+
+/* 9 · search box */
+.forge-search{display:block;max-width:400px;font-family:ui-monospace,monospace}
+.forge-search__label{display:block;font-size:11px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--color-text-muted);margin-bottom:var(--space-xs)}
+.forge-search__field{position:relative;display:flex;align-items:center;background:var(--color-slate);
+  border:1px solid var(--color-border);border-radius:var(--radius-md);
+  transition:border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out)}
+.forge-search__field:focus-within{border-color:var(--color-accent);box-shadow:0 0 0 2px var(--color-ember-halo);
+  background:var(--color-graphite)}
+.forge-search__field:hover{border-color:var(--color-border-strong)}
+.forge-search__icon{flex-shrink:0;width:16px;height:16px;margin-left:var(--space-md);color:var(--color-text-muted);
+  transition:color var(--duration-fast) var(--ease-out)}
+.forge-search__field:focus-within .forge-search__icon{color:var(--color-accent)}
+.forge-search__input{flex:1;height:40px;padding:0 var(--space-sm);background:transparent;border:none;outline:none;
+  color:var(--color-text);font-family:inherit;font-size:14px;font-weight:500;min-width:0}
+.forge-search__input::placeholder{color:var(--color-ash-soft);font-weight:400}
+.forge-search__input::-webkit-search-decoration,.forge-search__input::-webkit-search-cancel-button,
+.forge-search__input::-webkit-search-results-button,.forge-search__input::-webkit-search-results-decoration{display:none}
+.forge-search__clear{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:28px;height:28px;
+  margin-right:6px;padding:0;border:none;border-radius:var(--radius-sm);background:transparent;
+  color:var(--color-text-muted);cursor:pointer;opacity:0;pointer-events:none;
+  transition:color var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out)}
+.forge-search__clear.visible{opacity:1;pointer-events:auto}
+.forge-search__clear:hover{color:var(--color-text);background:var(--color-border)}
+.forge-search__clear:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+.forge-search__hint{display:block;margin-top:var(--space-2xs);font-size:13px;color:var(--color-text-muted)}
+
+/* 10 · kpi card */
+.forge-kpi{display:block;max-width:360px;background:var(--color-graphite);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);box-shadow:inset 0 1px 0 var(--color-edge-highlight);overflow:hidden;
+  font-family:ui-monospace,monospace;
+  transition:border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out)}
+.forge-kpi:hover{border-color:var(--color-border-strong)}
+.forge-kpi__bar{display:flex;align-items:center;gap:var(--space-sm);padding:var(--space-sm) var(--space-md);
+  border-bottom:1px solid var(--color-border);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)}
+.forge-kpi__title{flex:1;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--color-text-muted)}
+.forge-kpi__status{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--color-text-muted);padding:2px 8px;border:1px solid var(--color-border);border-radius:var(--radius-sm)}
+.forge-kpi__status--live{color:var(--color-accent);border-color:var(--color-accent)}
+.forge-kpi__body{padding:var(--space-lg)}
+.forge-kpi__figure{font-size:40px;font-weight:700;letter-spacing:-.02em;color:var(--color-text);
+  line-height:1.05;margin-bottom:var(--space-xs)}
+.forge-kpi__unit{font-family:inherit;font-size:14px;font-weight:500;letter-spacing:.08em;
+  color:var(--color-text-muted);margin-left:8px;text-transform:uppercase}
+.forge-kpi__meta{display:flex;align-items:center;gap:var(--space-sm);margin-bottom:var(--space-md)}
+.forge-kpi__trend{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:600;
+  color:var(--color-text-muted)}
+.forge-kpi__trend--up{color:var(--color-accent)}
+.forge-kpi__trend--up svg{stroke:var(--color-accent)}
+.forge-kpi__secondary{font-size:13px;color:var(--color-text-muted)}
+.forge-kpi__progress{width:100%;height:2px;background:var(--color-border);border-radius:2px;
+  margin-top:var(--space-sm);margin-bottom:var(--space-md);overflow:hidden}
+.forge-kpi__progress-fill{display:block;height:100%;background:var(--color-accent);border-radius:2px;
+  transition:width .8s var(--ease-out)}
+.forge-kpi__tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:var(--space-xs)}
+.forge-kpi__tag{display:inline-flex;align-items:center;height:22px;padding:0 var(--space-xs);
+  border-radius:var(--radius-sm);border:1px solid var(--color-border);color:var(--color-text-muted);
+  font-family:inherit;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.forge-kpi__tag--accent{border-color:var(--color-accent);color:var(--color-accent)}
+
+/* 11 · plan / pricing card */
+.forge-plan{display:flex;flex-direction:column;max-width:340px;background:var(--color-graphite);
+  border:1px solid var(--color-border);border-radius:var(--radius-md);
+  box-shadow:inset 0 1px 0 var(--color-edge-highlight);padding:var(--space-lg);
+  font-family:ui-monospace,monospace;
+  transition:border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out)}
+.forge-plan:hover{border-color:var(--color-border-strong);
+  box-shadow:inset 0 1px 0 var(--color-edge-highlight),0 4px 12px rgba(0,0,0,.3)}
+.forge-plan__header{margin-bottom:var(--space-md)}
+.forge-plan__badge{display:inline-block;padding:2px 10px;border-radius:var(--radius-sm);
+  background:var(--color-accent);color:var(--color-ink);font-size:10px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;margin-bottom:var(--space-sm)}
+.forge-plan__name{margin:0 0 var(--space-xs);font-size:18px;font-weight:700;letter-spacing:-.02em;color:var(--color-text)}
+.forge-plan__price{display:flex;align-items:baseline;gap:2px;margin-bottom:var(--space-xs)}
+.forge-plan__currency{font-size:18px;font-weight:500;color:var(--color-text-muted)}
+.forge-plan__amount{font-size:36px;font-weight:700;letter-spacing:-.02em;color:var(--color-text);line-height:1}
+.forge-plan__period{font-size:14px;font-weight:500;color:var(--color-text-muted);margin-left:4px}
+.forge-plan__description{margin:var(--space-xs) 0 0;font-size:13px;color:var(--color-text-muted);line-height:1.4}
+.forge-plan__features{list-style:none;margin:0 0 var(--space-lg);padding:0;display:flex;
+  flex-direction:column;gap:var(--space-xs)}
+.forge-plan__feature{display:flex;align-items:center;gap:var(--space-xs);font-size:13px;
+  color:var(--color-text-muted);transition:color var(--duration-fast) var(--ease-out)}
+.forge-plan__feature svg{flex-shrink:0;stroke:var(--color-text-muted);transition:stroke var(--duration-fast) var(--ease-out)}
+.forge-plan__feature--included{color:var(--color-text)}
+.forge-plan__feature--included svg{stroke:var(--color-accent)}
+.forge-plan__actions{display:flex;flex-direction:column;gap:var(--space-xs);margin-top:auto}
+.forge-plan__btn{display:inline-flex;align-items:center;justify-content:center;height:40px;
+  padding:0 var(--space-md);border-radius:var(--radius-md);border:1px solid transparent;font-family:inherit;
+  font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;
+  transition:all var(--duration-fast) var(--ease-out);user-select:none}
+.forge-plan__btn--primary{background:var(--color-accent);color:var(--color-ink);border-color:var(--color-accent)}
+.forge-plan__btn--primary:hover{background:var(--color-spark);border-color:var(--color-spark)}
+.forge-plan__btn--secondary{background:transparent;color:var(--color-text-muted);border-color:var(--color-border)}
+.forge-plan__btn--secondary:hover{color:var(--color-text);border-color:var(--color-border-strong)}
+.forge-plan__btn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+
+/* 12 · tip / warp */
+.forge-tip{display:flex;align-items:flex-start;gap:var(--space-sm);max-width:480px;padding:var(--space-md);
+  background:var(--color-slate);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  border-left:3px solid var(--color-accent);font-family:ui-monospace,monospace;
+  transition:border-color var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
+.forge-tip:hover{border-color:var(--color-border-strong);background:var(--color-graphite)}
+.forge-tip__icon{flex-shrink:0;margin-top:2px;color:var(--color-accent)}
+.forge-tip__body{flex:1;display:flex;flex-direction:column;gap:var(--space-xs)}
+.forge-tip__text{margin:0;font-size:14px;line-height:1.5;color:var(--color-text)}
+.forge-tip__code{display:inline-block;padding:0 6px;background:var(--color-graphite);
+  border:1px solid var(--color-border);border-radius:2px;font-family:inherit;font-size:12px;
+  color:var(--color-accent);letter-spacing:.04em}
+.forge-tip__actions{display:flex;gap:var(--space-xs);margin-top:4px}
+.forge-tip__action{display:inline-flex;align-items:center;justify-content:center;padding:4px 12px;
+  border:1px solid var(--color-border);border-radius:var(--radius-md);background:transparent;
+  color:var(--color-text-muted);font-family:inherit;font-size:11px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.06em;cursor:pointer;height:28px;transition:all var(--duration-fast) var(--ease-out)}
+.forge-tip__action:hover{color:var(--color-text);border-color:var(--color-border-strong)}
+.forge-tip__action--primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-ink)}
+.forge-tip__action--primary:hover{background:var(--color-spark);border-color:var(--color-spark);color:var(--color-ink)}
+.forge-tip__close{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:24px;height:24px;
+  margin:-4px -4px 0 0;padding:0;border:none;background:transparent;color:var(--color-text-muted);
+  cursor:pointer;border-radius:var(--radius-md);
+  transition:color var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
+.forge-tip__close:hover{color:var(--color-text);background:var(--color-border)}
+.forge-tip__close:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+
+/* 13 · portfolio allocation */
+.forge-portfolio{max-width:420px;background:var(--color-graphite);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);padding:var(--space-md);font-family:ui-monospace,monospace;
+  transition:border-color var(--duration-fast) var(--ease-out)}
+.forge-portfolio:hover{border-color:var(--color-border-strong)}
+.forge-portfolio__header{display:flex;justify-content:space-between;align-items:baseline;
+  margin-bottom:var(--space-md);padding-bottom:var(--space-sm);border-bottom:1px solid var(--color-border)}
+.forge-portfolio__title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--color-text-muted)}
+.forge-portfolio__total{font-size:12px;font-weight:600;color:var(--color-text)}
+.forge-portfolio__list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.forge-portfolio__item{display:grid;grid-template-columns:1fr auto;gap:var(--space-xs) var(--space-sm);
+  padding:var(--space-sm) var(--space-xs);border-radius:var(--radius-sm);cursor:default;
+  transition:background var(--duration-fast) var(--ease-out)}
+.forge-portfolio__item:hover{background:var(--color-slate)}
+.forge-portfolio__item:not(:last-child){border-bottom:1px solid var(--color-border)}
+.forge-portfolio__asset-group{display:flex;align-items:baseline;gap:var(--space-xs)}
+.forge-portfolio__asset{font-size:14px;font-weight:500;color:var(--color-text)}
+.forge-portfolio__ticker{font-size:11px;font-weight:400;text-transform:uppercase;color:var(--color-text-muted)}
+.forge-portfolio__numbers{display:flex;align-items:baseline;gap:var(--space-sm)}
+.forge-portfolio__value{font-size:14px;color:var(--color-text)}
+.forge-portfolio__percent{font-size:13px;font-weight:600;color:var(--color-accent)}
+.forge-portfolio__bar{grid-column:1/-1;height:3px;background:var(--color-slate);border-radius:2px;overflow:hidden}
+.forge-portfolio__bar-fill{display:block;height:100%;background:var(--color-accent);border-radius:2px;
+  transition:width .6s var(--ease-out)}
+
+/* 14 · navigation */
+.forge-nav{display:flex;flex-direction:column;gap:var(--space-xs);font-family:ui-monospace,monospace}
+.forge-nav__brand{display:flex;align-items:center;gap:var(--space-sm);padding:var(--space-xs) var(--space-sm)}
+.forge-nav__brand-icon{flex-shrink:0;color:var(--color-accent)}
+.forge-nav__brand-name{font-size:15px;font-weight:700;letter-spacing:-.02em;color:var(--color-text)}
+.forge-nav__brand-version{font-size:10px;font-weight:500;padding:1px 6px;border-radius:var(--radius-sm);
+  background:var(--color-slate);border:1px solid var(--color-border);color:var(--color-text-muted);
+  letter-spacing:.04em;margin-left:auto}
+.forge-nav__list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.forge-nav__item{padding:0 var(--space-sm)}
+.forge-nav__link{display:flex;align-items:center;gap:var(--space-sm);padding:var(--space-sm);
+  border-radius:var(--radius-sm);color:var(--color-text-muted);text-decoration:none;font-size:13px;
+  font-weight:500;transition:all var(--duration-fast) var(--ease-out);cursor:pointer;position:relative}
+.forge-nav__link:hover{color:var(--color-text);background:var(--color-slate)}
+.forge-nav__link--active{color:var(--color-text);background:var(--color-slate)}
+.forge-nav__link--active::before{content:'';position:absolute;left:-4px;top:50%;transform:translateY(-50%);
+  width:3px;height:20px;background:var(--color-accent);border-radius:2px}
+.forge-nav__icon{flex-shrink:0;width:16px;height:16px;stroke:currentColor;
+  transition:color var(--duration-fast) var(--ease-out)}
+.forge-nav__link:hover .forge-nav__icon,.forge-nav__link--active .forge-nav__icon{color:var(--color-accent)}
+.forge-nav__link:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo);border-radius:var(--radius-sm)}
+
+/* 15 · status card */
+.forge-status{display:flex;flex-direction:column;max-width:380px;background:var(--color-graphite);
+  border:1px solid var(--color-border);border-radius:var(--radius-md);
+  box-shadow:inset 0 1px 0 var(--color-edge-highlight);font-family:ui-monospace,monospace;overflow:hidden;
+  transition:border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out)}
+.forge-status:hover{border-color:var(--color-border-strong);
+  box-shadow:inset 0 1px 0 var(--color-edge-highlight),0 2px 8px rgba(0,0,0,.3)}
+.forge-status__header{display:flex;justify-content:space-between;align-items:center;
+  padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--color-border);
+  background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)}
+.forge-status__indicator{display:inline-flex;align-items:center;gap:var(--space-xs);font-size:11px;
+  font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-muted)}
+.forge-status__dot{width:8px;height:8px;border-radius:50%;background:var(--color-text-muted);
+  transition:background var(--duration-fast) var(--ease-out)}
+.forge-status__indicator--online .forge-status__dot{background:var(--color-online)}
+.forge-status__indicator--warning .forge-status__dot{background:var(--color-warning)}
+.forge-status__indicator--offline .forge-status__dot{background:var(--color-offline)}
+.forge-status__time{font-size:11px;color:var(--color-text-muted)}
+.forge-status__body{padding:var(--space-md);flex:1}
+.forge-status__title{margin:0 0 var(--space-2xs);font-size:18px;font-weight:700;letter-spacing:-.02em;
+  color:var(--color-text)}
+.forge-status__description{margin:0 0 var(--space-md);font-size:13px;color:var(--color-text-muted)}
+.forge-status__metrics{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-xs) var(--space-sm);
+  margin-bottom:var(--space-md);padding:var(--space-sm);background:var(--color-slate);
+  border-radius:var(--radius-sm);border:1px solid var(--color-border)}
+.forge-status__metric{display:flex;flex-direction:column;gap:2px}
+.forge-status__metric-label{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--color-text-muted)}
+.forge-status__metric-value{font-size:14px;font-weight:600;color:var(--color-text)}
+.forge-status__metric-value--low{color:var(--color-online)}
+.forge-status__metric-value--medium{color:var(--color-warning)}
+.forge-status__metric-value--high{color:var(--color-offline)}
+.forge-status__bar{display:flex;align-items:center;gap:var(--space-sm)}
+.forge-status__bar-label{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--color-text-muted);flex-shrink:0}
+.forge-status__bar-track{flex:1;height:4px;background:var(--color-slate);border-radius:2px;overflow:hidden}
+.forge-status__bar-fill{display:block;height:100%;background:var(--color-accent);border-radius:2px;
+  transition:width .8s var(--ease-out)}
+.forge-status__bar-value{font-size:12px;font-weight:600;color:var(--color-text);flex-shrink:0;
+  min-width:32px;text-align:right}
+.forge-status__footer{display:flex;gap:var(--space-xs);padding:var(--space-sm) var(--space-md);
+  border-top:1px solid var(--color-border);background:var(--color-slate)}
+.forge-status__action{display:inline-flex;align-items:center;justify-content:center;
+  padding:0 var(--space-md);height:32px;border:1px solid var(--color-border);border-radius:var(--radius-sm);
+  background:transparent;color:var(--color-text-muted);font-family:inherit;font-size:11px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}
+.forge-status__action:hover{color:var(--color-text);border-color:var(--color-border-strong)}
+.forge-status__action:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+.forge-status__action--primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-ink)}
+.forge-status__action--primary:hover{background:var(--color-spark);border-color:var(--color-spark);color:var(--color-ink)}
+
+/* 16 · dialog */
+.forge-modal{position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;
+  justify-content:center;z-index:1000;font-family:ui-monospace,monospace}
+.forge-modal__overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);
+  backdrop-filter:blur(4px)}
+.forge-modal__panel{position:relative;max-width:480px;width:100%;margin:var(--space-md);
+  background:var(--color-graphite);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  box-shadow:0 8px 32px rgba(0,0,0,.5);overflow:hidden}
+.forge-modal__header{display:flex;align-items:center;justify-content:space-between;
+  padding:var(--space-md) var(--space-lg);border-bottom:1px solid var(--color-border)}
+.forge-modal__title{margin:0;font-size:16px;font-weight:600;color:var(--color-text)}
+.forge-modal__close{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:none;
+  background:transparent;color:var(--color-text-muted);cursor:pointer;border-radius:var(--radius-md);
+  transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
+.forge-modal__close:hover{background:var(--color-border);color:var(--color-text)}
+.forge-modal__body{padding:var(--space-lg);color:var(--color-text);font-size:14px;line-height:1.5}
+.forge-modal__body p{margin:0}
+.forge-modal__footer{display:flex;justify-content:flex-end;gap:var(--space-xs);
+  padding:var(--space-md) var(--space-lg);border-top:1px solid var(--color-border);background:var(--color-slate)}
+.forge-modal__btn{display:inline-flex;align-items:center;justify-content:center;height:36px;
+  padding:0 var(--space-md);border-radius:var(--radius-md);border:1px solid transparent;font-family:inherit;
+  font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;
+  transition:all var(--duration-fast) var(--ease-out)}
+.forge-modal__btn--secondary{background:transparent;color:var(--color-text-muted);border-color:var(--color-border)}
+.forge-modal__btn--secondary:hover{color:var(--color-text);border-color:var(--color-border-strong)}
+.forge-modal__btn--danger{background:var(--color-danger);color:#fff;border-color:var(--color-danger)}
+.forge-modal__btn--danger:hover{filter:brightness(1.1)}
+.forge-modal__btn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+
+/* 17 · dropdown / select */
+.forge-select{position:relative;display:block;max-width:240px;font-family:ui-monospace,monospace}
+.forge-select__label{display:block;font-size:11px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--color-text-muted);margin-bottom:var(--space-xs)}
+.forge-select__control{display:flex;align-items:center;background:var(--color-slate);
+  border:1px solid var(--color-border);border-radius:var(--radius-md);cursor:pointer;
+  transition:border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out)}
+.forge-select__control:hover{border-color:var(--color-border-strong)}
+.forge-select__control:focus-within{border-color:var(--color-accent);box-shadow:0 0 0 2px var(--color-ember-halo)}
+.forge-select__input{flex:1;height:40px;padding:0 var(--space-sm);background:transparent;border:none;outline:none;
+  color:var(--color-text);font-family:inherit;font-size:14px;font-weight:500;cursor:pointer}
+.forge-select__arrow{flex-shrink:0;margin-right:var(--space-sm);color:var(--color-text-muted);
+  transition:transform var(--duration-fast) var(--ease-out)}
+.forge-select[aria-expanded="true"] .forge-select__arrow{transform:rotate(180deg)}
+.forge-select__menu{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;margin:0;
+  padding:var(--space-xs) 0;list-style:none;background:var(--color-graphite);
+  border:1px solid var(--color-border);border-radius:var(--radius-md);
+  box-shadow:0 4px 12px rgba(0,0,0,.3);z-index:100}
+.forge-select[aria-expanded="true"] .forge-select__menu{display:block}
+.forge-select__option{padding:var(--space-xs) var(--space-sm);font-size:13px;color:var(--color-text-muted);
+  cursor:pointer;transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
+.forge-select__option:hover,.forge-select__option--selected{background:var(--color-slate);color:var(--color-text)}
+
+/* 18 · toast / notification */
+.forge-toast{display:flex;align-items:flex-start;gap:var(--space-sm);max-width:400px;padding:var(--space-md);
+  background:var(--color-slate);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  border-left:3px solid var(--color-accent);font-family:ui-monospace,monospace;
+  box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.forge-toast--success{border-left-color:var(--color-success)}
+.forge-toast--success .forge-toast__icon{color:var(--color-success)}
+.forge-toast--error{border-left-color:var(--color-error)}
+.forge-toast--error .forge-toast__icon{color:var(--color-error)}
+.forge-toast__icon{flex-shrink:0;margin-top:2px}
+.forge-toast__body{flex:1}
+.forge-toast__title{display:block;font-size:13px;font-weight:600;color:var(--color-text)}
+.forge-toast__message{margin:2px 0 0;font-size:12px;color:var(--color-text-muted);line-height:1.45}
+.forge-toast__close{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:24px;height:24px;
+  border:none;background:transparent;color:var(--color-text-muted);cursor:pointer;border-radius:var(--radius-sm);
+  transition:color var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
+.forge-toast__close:hover{color:var(--color-text);background:var(--color-border)}
+
+/* 19 · accordion */
+.forge-accordion{background:var(--color-graphite);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);font-family:ui-monospace,monospace;overflow:hidden}
+.forge-accordion__item{border-bottom:1px solid var(--color-border)}
+.forge-accordion__item:last-child{border-bottom:none}
+.forge-accordion__summary{display:flex;align-items:center;padding:var(--space-md) var(--space-sm);
+  font-size:14px;font-weight:500;color:var(--color-text);cursor:pointer;list-style:none;
+  transition:color var(--duration-fast) var(--ease-out);position:relative}
+.forge-accordion__summary::-webkit-details-marker{display:none}
+.forge-accordion__summary::after{content:"+";position:absolute;right:var(--space-sm);font-size:18px;
+  font-weight:300;color:var(--color-text-muted);transition:transform var(--duration-fast) var(--ease-out)}
+.forge-accordion__item[open] .forge-accordion__summary::after{content:"−"}
+.forge-accordion__summary:hover{color:var(--color-accent)}
+.forge-accordion__body{padding:0 var(--space-sm) var(--space-md);font-size:13px;
+  color:var(--color-text-muted);line-height:1.5}
+.forge-accordion__body p{margin:0}
+
+/* 20 · radio group */
+.forge-radio-group{border:none;padding:0;margin:0;font-family:ui-monospace,monospace}
+.forge-radio-group__legend{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--color-text-muted);margin-bottom:var(--space-sm)}
+.forge-radio{display:inline-flex;align-items:center;gap:var(--space-sm);margin-right:var(--space-md);
+  font-size:14px;color:var(--color-text);cursor:pointer;user-select:none}
+.forge-radio input[type="radio"]{appearance:none;-webkit-appearance:none;width:18px;height:18px;flex-shrink:0;
+  margin:0;background:var(--color-slate);border:1px solid var(--color-border);border-radius:var(--radius-full);
+  cursor:pointer;position:relative;
+  transition:background var(--duration-fast) var(--ease-out),border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out)}
+.forge-radio input[type="radio"]::before{content:"";position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%) scale(0);width:8px;height:8px;background:var(--color-ink);
+  border-radius:var(--radius-full);transition:transform var(--duration-fast) var(--ease-out)}
+.forge-radio input[type="radio"]:checked{background:var(--color-accent);border-color:var(--color-accent)}
+.forge-radio input[type="radio"]:checked::before{transform:translate(-50%,-50%) scale(1)}
+.forge-radio input[type="radio"]:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+.forge-radio input[type="radio"]:hover{border-color:var(--color-border-strong)}
+
+/* 21 · stepper / wizard */
+.forge-stepper{display:flex;justify-content:space-between;padding:0;margin:0;list-style:none;
+  font-family:ui-monospace,monospace}
+.forge-stepper__step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative;
+  gap:var(--space-xs)}
+.forge-stepper__step:not(:last-child)::after{content:"";position:absolute;top:14px;
+  left:calc(50% + 16px);right:calc(-50% + 16px);height:2px;background:var(--color-border)}
+.forge-stepper__step--completed:not(:last-child)::after{background:var(--color-accent)}
+.forge-stepper__indicator{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
+  border-radius:var(--radius-full);background:var(--color-border);color:var(--color-text-muted);font-size:12px;
+  font-weight:600;position:relative;z-index:1;
+  transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
+.forge-stepper__step--completed .forge-stepper__indicator{background:var(--color-accent);color:var(--color-ink)}
+.forge-stepper__step--active .forge-stepper__indicator{background:var(--color-accent);color:var(--color-ink);
+  box-shadow:0 0 0 4px var(--color-ember-halo)}
+.forge-stepper__label{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--color-text-muted);text-align:center}
+.forge-stepper__step--active .forge-stepper__label{color:var(--color-text)}
+
+/* 22+26 · badge */
+.forge-badge{display:inline-flex;align-items:center;padding:0 10px;height:22px;border-radius:var(--radius-full);
+  background:var(--color-slate);border:1px solid var(--color-border);color:var(--color-text-muted);
+  font-family:ui-monospace,monospace;font-size:11px;font-weight:600;letter-spacing:.04em;
+  text-transform:uppercase;line-height:1}
+.forge-badge--accent{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-ink)}
+.forge-badge--success{background:var(--color-success);border-color:var(--color-success);color:var(--color-ink)}
+.forge-badge--warning{background:var(--color-warning);border-color:var(--color-warning);color:var(--color-ink)}
+.forge-badge--danger{background:var(--color-danger);border-color:var(--color-danger);color:#fff}
+.forge-badge--dot{padding:0 10px 0 6px;gap:6px}
+.forge-badge--dot::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* 23 · progress circle (svg with .forge-progress-circle__track/__fill circles) */
+.forge-progress-circle{display:inline-block;width:80px;height:80px;position:relative}
+.forge-progress-circle__svg{transform:rotate(-90deg);width:100%;height:100%}
+.forge-progress-circle__track{fill:none;stroke:var(--color-border)}
+.forge-progress-circle__fill{fill:none;stroke:var(--color-accent);
+  transition:stroke-dasharray .6s var(--ease-out)}
+.forge-progress-circle__label{transform:rotate(90deg);font-family:ui-monospace,monospace;font-size:8px;
+  font-weight:600;fill:var(--color-text);text-anchor:middle;dominant-baseline:central}
+
+/* 24 · textarea */
+.forge-textarea-field{display:block;max-width:400px;font-family:ui-monospace,monospace}
+.forge-textarea-field__label{display:block;font-size:11px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--color-text-muted);margin-bottom:var(--space-xs)}
+.forge-textarea-field__input{width:100%;padding:var(--space-sm) var(--space-md);background:var(--color-slate);
+  border:1px solid var(--color-border);border-radius:var(--radius-md);color:var(--color-text);
+  font-family:inherit;font-size:14px;font-weight:400;resize:vertical;min-height:80px;outline:none;
+  transition:border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out)}
+.forge-textarea-field__input::placeholder{color:var(--color-ash-soft)}
+.forge-textarea-field__input:hover{border-color:var(--color-border-strong)}
+.forge-textarea-field__input:focus{outline:none;border-color:var(--color-accent);
+  box-shadow:0 0 0 2px var(--color-ember-halo);background:var(--color-graphite)}
+.forge-textarea-field__hint{display:block;margin-top:var(--space-2xs);font-size:13px;color:var(--color-text-muted)}
+
+/* 25 · data table */
+.forge-table{width:100%;border-collapse:collapse;font-family:ui-monospace,monospace;font-size:13px;
+  background:var(--color-graphite);border-radius:var(--radius-sm);overflow:hidden;
+  border:1px solid var(--color-accent);
+  box-shadow:0 0 24px rgba(246,90,26,.12),inset 0 0 24px rgba(246,90,26,.03)}
+.forge-table thead{background:var(--color-slate);border-bottom:1px solid var(--color-accent)}
+.forge-table th{padding:var(--space-sm);text-align:left;font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--color-text-muted)}
+.forge-table td{padding:var(--space-sm);border-bottom:1px solid var(--color-border);color:var(--color-text)}
+.forge-table tbody tr{transition:background var(--duration-fast) var(--ease-out)}
+.forge-table tbody tr:hover{background:var(--color-slate)}
+.forge-table tbody tr:last-child td{border-bottom:none}
+.forge-table .forge-badge{font-size:10px;padding:0 10px;height:20px}
+
+/* ═══════════════ PART 2 — AGENT PORTAL FORGE SKIN (body.partner-mode ONLY) ═══════════════
+   Admin dashboard + landing page never get body.partner-mode → zero effect there. */
+
+/* ── base page ── */
+body.partner-mode{
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:var(--color-text);
+  background:var(--color-ink);
+}
+body.partner-mode ::selection{background:var(--color-accent);color:var(--color-ink)}
+body.partner-mode .main{background:var(--color-ink)}
+body.partner-mode ::-webkit-scrollbar{width:10px;height:10px}
+body.partner-mode ::-webkit-scrollbar-track{background:var(--color-ink)}
+body.partner-mode ::-webkit-scrollbar-thumb{background:var(--color-border-strong);border-radius:5px}
+body.partner-mode ::-webkit-scrollbar-thumb:hover{background:var(--color-ash-soft)}
+
+/* ── sidebar → forge rail ── */
+body.partner-mode .sidebar{background:var(--color-graphite);border-right:1px solid var(--color-border)}
+body.partner-mode .logo{color:var(--color-text)}
+body.partner-mode .logo span{color:var(--color-accent)}
+body.partner-mode .logo small{color:var(--color-text-muted)}
+body.partner-mode .nav-label{font-family:ui-monospace,monospace;font-size:10px;font-weight:500;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--color-text-muted)}
+body.partner-mode .nav button{
+  font-family:ui-monospace,monospace;font-size:12px;font-weight:500;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--color-text-muted);border-radius:var(--radius-sm);
+  transition:color var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
+body.partner-mode .nav button:hover{background:var(--color-slate);color:var(--color-text)}
+body.partner-mode .nav button.active{background:var(--color-slate);color:var(--color-text)}
+body.partner-mode .nav button .icon{color:var(--color-accent)}
+body.partner-mode .sidebottom button{
+  font-family:ui-monospace,monospace;font-size:11px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--color-text-muted);border:1px solid var(--color-border);
+  border-radius:var(--radius-sm);
+  transition:color var(--duration-fast) var(--ease-out),border-color var(--duration-fast) var(--ease-out)}
+body.partner-mode .sidebottom button:hover{color:var(--color-text);border-color:var(--color-border-strong)}
+body.partner-mode .notifbtn{
+  background:var(--color-slate);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  color:var(--color-text);
+  transition:border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out)}
+body.partner-mode .notifbtn:hover{border-color:var(--color-border-strong)}
+body.partner-mode .notifbtn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+body.partner-mode .navbadge{background:var(--color-accent);color:var(--color-ink);border-radius:var(--radius-sm);
+  font-weight:600}
+body.partner-mode .rtlive{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.08em}
+
+/* ── page titles ── */
+body.partner-mode .top h1{font-family:ui-monospace,monospace;font-weight:700;letter-spacing:-.02em;color:var(--color-text)}
+body.partner-mode .top p{color:var(--color-text-muted)}
+
+/* ── buttons → forge-btn ── */
+body.partner-mode .btn,body.partner-mode .btn.dark{
+  display:inline-flex;align-items:center;justify-content:center;gap:var(--space-xs);
+  height:40px;padding:0 var(--space-md);border-radius:var(--radius-md);
+  border:1px solid var(--color-border);background:transparent;color:var(--color-text-muted);
+  font-family:ui-monospace,monospace;font-size:12px;font-weight:600;line-height:1;
+  letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
+  transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),box-shadow var(--duration-fast) var(--ease-out)}
+body.partner-mode .btn:hover{color:var(--color-text);border-color:var(--color-border-strong)}
+body.partner-mode .btn.dark{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-ink)}
+body.partner-mode .btn.dark:hover{background:var(--color-spark);border-color:var(--color-spark)}
+body.partner-mode .btn:active{transform:translateY(1px)}
+body.partner-mode .btn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--color-ember-halo)}
+body.partner-mode .btn.danger{background:transparent;border-color:var(--color-danger);color:var(--color-danger)}
+body.partner-mode .btn.danger:hover{background:var(--color-danger);color:#fff}
+body.partner-mode .btn.small{height:28px;padding:0 var(--space-sm);font-size:10.5px}
+
+/* ── stat cards → forge-kpi ── */
+body.partner-mode .kpi-grid{gap:var(--space-sm)}
+body.partner-mode .card,body.partner-mode .section-box{
+  background:var(--color-graphite);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  box-shadow:inset 0 1px 0 var(--color-edge-highlight);
+  transition:border-color var(--duration-fast) var(--ease-out)}
+body.partner-mode .card:hover{border-color:var(--color-border-strong)}
+body.partner-mode .card.stat{border-radius:var(--radius-md)}
+body.partner-mode .card.stat .label{font-family:ui-monospace,monospace;font-size:10px;font-weight:500;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--color-text-muted)}
+body.partner-mode .card.stat .value{font-family:ui-monospace,monospace;font-size:28px;font-weight:700;
+  letter-spacing:-.02em;color:var(--color-text)}
+body.partner-mode .card.stat .change{font-family:ui-monospace,monospace;font-size:11px;color:var(--color-success)}
+body.partner-mode .toolbar h2{font-family:ui-monospace,monospace;font-size:14px;font-weight:600;
+  letter-spacing:.02em;color:var(--color-text)}
+body.partner-mode .muted,body.partner-mode .section-head span{color:var(--color-text-muted)}
+body.partner-mode .section-head h2{font-family:ui-monospace,monospace;letter-spacing:.02em}
+
+/* ── inputs → forge fields ── */
+body.partner-mode input,body.partner-mode select,body.partner-mode textarea{
+  background:var(--color-slate);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  color:var(--color-text);font-family:inherit;
+  transition:border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
+body.partner-mode input:hover,body.partner-mode select:hover,body.partner-mode textarea:hover{border-color:var(--color-border-strong)}
+body.partner-mode input:focus,body.partner-mode select:focus,body.partner-mode textarea:focus{
+  outline:none;border-color:var(--color-accent);box-shadow:0 0 0 2px var(--color-ember-halo);
+  background:var(--color-graphite)}
+body.partner-mode .filters input,body.partner-mode .cxsearch input{
+  height:36px;background:var(--color-slate);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  color:var(--color-text)}
+body.partner-mode .filters input:focus,body.partner-mode .cxsearch input:focus{
+  border-color:var(--color-accent);box-shadow:0 0 0 2px var(--color-ember-halo)}
+body.partner-mode .filters input::placeholder,body.partner-mode input::placeholder{color:var(--color-ash-soft)}
+body.partner-mode .field label{font-family:ui-monospace,monospace;font-size:10.5px;font-weight:500;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--color-text-muted)}
+body.partner-mode .kv span{color:var(--color-text-muted)}
+body.partner-mode .kv b{color:var(--color-text)}
+
+/* ── checkboxes / radios → forge controls ── */
+body.partner-mode input[type="checkbox"],body.partner-mode input[type="radio"]{
+  appearance:none;-webkit-appearance:none;width:18px;height:18px;flex-shrink:0;
+  background:var(--color-slate);border:1px solid var(--color-border);cursor:pointer;position:relative;
+  display:inline-grid;place-content:center;
+  transition:background var(--duration-fast) var(--ease-out),border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out)}
+body.partner-mode input[type="radio"]{border-radius:var(--radius-full)}
+body.partner-mode input[type="checkbox"]::after{content:"";width:10px;height:10px;transform:scale(0);
+  background:var(--color-ink);clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0%,43% 62%);
+  transition:transform var(--duration-fast) var(--ease-out)}
+body.partner-mode input[type="radio"]::after{content:"";position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%) scale(0);width:8px;height:8px;border-radius:50%;background:var(--color-ink);
+  transition:transform var(--duration-fast) var(--ease-out)}
+body.partner-mode input[type="checkbox"]:checked,body.partner-mode input[type="radio"]:checked{
+  background:var(--color-accent);border-color:var(--color-accent)}
+body.partner-mode input[type="checkbox"]:checked::after{transform:scale(1)}
+body.partner-mode input[type="radio"]:checked::after{transform:translate(-50%,-50%) scale(1)}
+
+/* ── tables → forge-table ── */
+body.partner-mode .view-table{
+  width:100%;border-collapse:collapse;font-family:ui-monospace,monospace;font-size:12.5px;
+  background:var(--color-graphite);border:1px solid var(--color-accent);border-radius:var(--radius-sm);
+  box-shadow:0 0 24px rgba(246,90,26,.12),inset 0 0 24px rgba(246,90,26,.03)}
+body.partner-mode .view-table thead{background:var(--color-slate);border-bottom:1px solid var(--color-accent)}
+body.partner-mode .view-table th{padding:var(--space-sm);font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--color-text-muted)}
+body.partner-mode .view-table td{padding:var(--space-sm);border-bottom:1px solid var(--color-border);
+  color:var(--color-text)}
+body.partner-mode .view-table tbody tr{transition:background var(--duration-fast) var(--ease-out)}
+body.partner-mode .view-table tbody tr:hover{background:var(--color-slate)}
+body.partner-mode .view-table tbody tr:last-child td{border-bottom:none}
+
+/* ── pills → forge-badge ── */
+body.partner-mode .pill{
+  display:inline-flex;align-items:center;height:20px;padding:0 10px;border-radius:var(--radius-full);
+  background:var(--color-slate);border:1px solid var(--color-border);color:var(--color-text-muted);
+  font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.04em;
+  text-transform:uppercase;line-height:1}
+body.partner-mode .pill.green{background:transparent;border-color:var(--color-success);color:var(--color-success)}
+body.partner-mode .pill.yellow{background:transparent;border-color:var(--color-warning);color:var(--color-warning)}
+body.partner-mode .pill.red{background:transparent;border-color:var(--color-danger);color:var(--color-danger)}
+body.partner-mode .pill.blue{background:transparent;border-color:var(--color-accent);color:var(--color-accent)}
+body.partner-mode .pill.gray{background:transparent;border-color:var(--color-border-strong);color:var(--color-text-muted)}
+
+/* ── progress bars → ember fills ── */
+body.partner-mode .progress{height:4px;border-radius:2px;background:var(--color-slate);overflow:hidden}
+body.partner-mode .progress i{border-radius:2px;background:var(--color-accent)}
+body.partner-mode .progress-lg{border-radius:2px;background:var(--color-slate)}
+body.partner-mode .progress-lg i{border-radius:2px;background:linear-gradient(90deg,var(--color-accent),var(--color-spark))}
+
+/* ── loader → forge bars ── */
+body.partner-mode .loader-wrap{padding:48px 0}
+body.partner-mode .loader{display:flex;align-items:flex-end;gap:4px;height:32px}
+body.partner-mode .loader .bar{width:4px;background:var(--color-filament);border-radius:1px;
+  animation:forge-pulse 1.2s ease-in-out infinite}
+body.partner-mode .loader .bar:nth-child(1){height:40%;animation-delay:0s}
+body.partner-mode .loader .bar:nth-child(2){height:65%;animation-delay:.15s}
+body.partner-mode .loader .bar:nth-child(3){height:100%;animation-delay:.3s}
+body.partner-mode .loader-text{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--color-text-muted)}
+
+/* ── helpdesk chat → forge panels ── */
+body.partner-mode .section-box.hdpage{padding:0;overflow:hidden}
+body.partner-mode .chat{background:var(--color-ink)}
+body.partner-mode .chat .msg{
+  max-width:78%;background:var(--color-slate);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);color:var(--color-text)}
+body.partner-mode .chat .msg.me{
+  background:var(--color-graphite);border-color:var(--color-accent);
+  border-left:3px solid var(--color-accent)}
+body.partner-mode .chat .msg.me time{color:var(--color-text-muted)}
+body.partner-mode .chatbar{background:var(--color-graphite);border-top:1px solid var(--color-border)}
+body.partner-mode .chatbar input{
+  background:var(--color-slate);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  color:var(--color-text)}
+body.partner-mode .chatbar input:focus{border-color:var(--color-accent);box-shadow:0 0 0 2px var(--color-ember-halo)}
+body.partner-mode .chatbar .btn,body.partner-mode .chatbar .btn.dark{
+  height:36px;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+
+/* ── empty states ── */
+body.partner-mode .empty{
+  border:1px dashed var(--color-border-strong);border-radius:var(--radius-md);
+  color:var(--color-text-muted);font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.04em}
+
+/* ── modals → forge-modal ── */
+body.partner-mode .overlay{background:rgba(0,0,0,.7);backdrop-filter:blur(4px)}
+body.partner-mode .modal{
+  background:var(--color-graphite);border:1px solid var(--color-border);border-radius:var(--radius-md);
+  box-shadow:0 8px 32px rgba(0,0,0,.5);color:var(--color-text)}
+body.partner-mode .modal h2{font-family:ui-monospace,monospace;font-size:15px;font-weight:600;
+  letter-spacing:.02em;color:var(--color-text)}
+body.partner-mode .modal p{color:var(--color-text-muted)}
+body.partner-mode .modal-actions{border-top:1px solid var(--color-border)}
+
+/* ── misc rows / avatars ── */
+body.partner-mode .target-row,body.partner-mode .acct-row{border-bottom:1px solid var(--color-border)}
+body.partner-mode .target-row:last-child,body.partner-mode .acct-row:last-child{border-bottom:none}
+body.partner-mode .partner .avatar{background:var(--color-slate);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);color:var(--color-accent)}
+body.partner-mode .mini{background:var(--color-slate);border:1px solid var(--color-border);
+  border-radius:var(--radius-sm);color:var(--color-text)}
+body.partner-mode .project-card{background:var(--color-graphite);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);
+  transition:border-color var(--duration-fast) var(--ease-out)}
+body.partner-mode .project-card:hover{border-color:var(--color-border-strong)}
+body.partner-mode .meta span{color:var(--color-text-muted)}
+
+/* ── toast → forge-toast ── */
+body.partner-mode #toast{
+  background:var(--color-slate);border:1px solid var(--color-border);border-left:3px solid var(--color-accent);
+  border-radius:var(--radius-md);color:var(--color-text);
+  font-family:ui-monospace,monospace;font-size:12.5px;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+
+/* ── file viewer ── */
+body.partner-mode .fv-body{background:var(--color-slate);border-color:var(--color-border);
+  border-radius:var(--radius-md)}
+body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{color:var(--color-text)}
