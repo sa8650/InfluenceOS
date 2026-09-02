@@ -231,6 +231,9 @@ const WD_STATUS={pending:['Pending','yellow'],accepted:['Accepted','green'],reje
 const TEAM_TYPE_LABELS={youtuber:'YouTuber',facebook:'Facebook',tiktoker:'TikToker',instagram:'Instagram',telegram:'Telegram',marketing_agent:'Marketing Agent',agency:'Agency'};
 const TEAM_STATUS={active:['Active','green'],inactive:['Inactive','gray']};
 const CATEGORIES=['views','clicks','sales','users','shares','reach','leads','profit','installs'];
+const TASK_STATUS={active:['Active','blue'],progress:['Progress','yellow'],inactive:['Inactive','gray'],completed:['Completed','green']};
+const TASK_PRIO={low:['Low','gray'],medium:['Medium','yellow'],high:['High','red']};
+const TASK_VIS={private:['Private','gray'],public:['Public','green'],shared:['Shared','blue']};
 const catLabel=c=>String(c||'users').charAt(0).toUpperCase()+String(c||'users').slice(1);
 const pill=(map,key)=>{const m=map[key]||[String(key),'gray'];return `<span class="pill ${m[1]}">${m[0]}</span>`};
 const projPill=s=>s==='active'?'<span class="pill green">Active</span>':'<span class="pill gray">Inactive</span>';
@@ -245,10 +248,11 @@ const PERM_MODULES={
   performance:['show'],
   vaultium:['show','delete','download','view'],
   connectx:['show','compose','settings','history'],
-  users:['show','add','edit','delete']
+  users:['show','add','edit','delete'],
+  tasks:['show','add','edit','delete']
 };
 const PERM_LABELS={show:'Show',add:'Add',edit:'Edit',delete:'Delete',download:'Download',view:'View',compose:'Compose',settings:'Settings',history:'History'};
-const MODULE_LABELS={agents:'Agent',projects:'Project',contribute:'Contribute',allocations:'Allocations',payments:'Payments',performance:'Performance',vaultium:'Vaultium',connectx:'ConnectX',users:'User Control'};
+const MODULE_LABELS={agents:'Agent',projects:'Project',contribute:'Contribute',allocations:'Allocations',payments:'Payments',performance:'Performance',vaultium:'Vaultium',connectx:'ConnectX',users:'User Control',tasks:'Task Manager'};
 let PERMS=null;                                  // null = owner / unrestricted
 const can=(m,a)=>!PERMS||!!(PERMS[m]&&PERMS[m][a]);
 function permsHtml(p){
@@ -497,7 +501,7 @@ function agentLoginModal(){
 
 /* ═══════════ ADMIN APP ═══════════ */
 let aView='dashboard';
-const NAV_PERM_MODULE={partners:'agents',projects:'projects',contribute:'contribute',allocations:'allocations',payments:'payments',performance:'performance',vaultium:'vaultium',connectx:'connectx',users:'users'};
+const NAV_PERM_MODULE={partners:'agents',projects:'projects',contribute:'contribute',allocations:'allocations',payments:'payments',performance:'performance',vaultium:'vaultium',connectx:'connectx',users:'users',tasks:'tasks'};
 function adminApp(){
   document.body.classList.remove('landing-mode');
   document.body.classList.remove('partner-mode');
@@ -505,7 +509,7 @@ function adminApp(){
   document.title='InfluenceOS — Admin';
   PERMS=state?.permissions||null;
   if(NAV_PERM_MODULE[aView]&&!can(NAV_PERM_MODULE[aView],'show'))aView='dashboard';
-  const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['connectx','✉','ConnectX'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']]
+  const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['tasks','☑','Task Manager'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['connectx','✉','ConnectX'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']]
     .filter(([k])=>!NAV_PERM_MODULE[k]||can(NAV_PERM_MODULE[k],'show'));
   app.innerHTML=`<div class="app">
     <aside class="sidebar">
@@ -535,6 +539,7 @@ async function renderAdmin(){
     if(aView==='partners')return await aPartners(main);
     if(aView==='projects')return await aProjects(main);
     if(aView==='contribute')return await aContribute(main);
+    if(aView==='tasks')return await aTasks(main);
     if(aView==='vaultium')return await aVaultium(main);
     if(aView==='connectx')return await aConnectX(main);
     if(aView==='helpdesk')return await aHelpdesk(main);
@@ -1037,6 +1042,106 @@ function partnerViewModal(p){
     <div style="overflow:auto"><table class="view-table"><thead><tr><th>When</th><th>Field</th><th>Old</th><th>New</th></tr></thead>
     <tbody>${d.logs.length?d.logs.map(L=>`<tr><td>${fmtDT(L.created_at)}</td><td><b>${esc(L.field)}</b></td><td class="muted" style="max-width:230px;white-space:pre-line;word-break:break-word">${esc(L.old_value||'—')}</td><td style="max-width:230px;white-space:pre-line;word-break:break-word">${esc(L.new_value||'—')}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No profile edits recorded yet.</td></tr>'}</tbody></table></div>`;
   }).catch(e=>{ov.querySelector('#pvBody').innerHTML=`<div class="empty">${esc(e.message)}</div>`});
+}
+
+/* ---------- ADMIN: TASK MANAGER ---------- */
+let taskUsers=[];
+async function aTasks(main){
+  loading(main);
+  const d=await api('tasks');
+  if(aView!=='tasks')return;
+  taskUsers=d.users||[];
+  renderTasksView(main,d.tasks||[]);
+}
+function renderTasksView(main,tasks){
+  main.innerHTML=`
+  <div class="top"><div class="title"><h1>Task Manager</h1><p>Internal board tasks — create, share and approve progress.</p></div>
+    <div class="actions">${can('tasks','add')?'<button class="btn dark" id="addTask">＋ Create task</button>':''}</div></div>
+  ${tasks.length?`<div class="project-grid">${tasks.map(taskCardHtml).join('')}</div>`:'<div class="section-box"><div class="empty">No tasks yet — create the first one.</div></div>'}`;
+  wire('addTask',()=>taskFormModal(null));
+  main.querySelectorAll('[data-task]').forEach(c=>c.onclick=()=>taskDetailModal(c.dataset.task));
+}
+function taskCardHtml(t){
+  return `<div class="project-card" style="cursor:pointer" data-task="${t.id}">
+    <div class="detail-head"><div><h3>${esc(t.title)}</h3><p>${esc(t.code)}${t.pending?` · <b style="color:#c62828">${t.pending} pending</b>`:''}</p></div>${pill(TASK_STATUS,t.status)}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${pill(TASK_PRIO,t.priority)}${pill(TASK_VIS,t.visibility)}${t.visibility==='shared'?`<span class="pill blue">${(t.shared_with||[]).length} user${(t.shared_with||[]).length===1?'':'s'}</span>`:''}</div>
+    <div class="meta" style="margin-top:10px"><span>Progress</span><b>${t.progress}%</b></div>
+    <div class="progress"><i style="width:${Math.min(100,t.progress)}%"></i></div>
+    ${t.details?`<p class="muted" style="font-size:11px;line-height:1.55;margin:8px 0 0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(t.details)}</p>`:''}
+    <div class="meta" style="margin-top:10px"><span>By ${esc(t.created_by_name)}</span><b>${fmtDate(t.created_at)}</b></div>
+  </div>`;
+}
+function taskFormModal(t){
+  const isEdit=!!t;
+  const ov=modal(`
+    <h2>${isEdit?'Edit task':'Create task'}</h2>
+    <p>${isEdit?esc(t.code)+' · progress adjusts automatically from approved posts.':'A short Task ID is generated automatically on save.'}</p>
+    <div class="field"><label>Task ID</label><input value="${isEdit?esc(t.code):'Auto-generated'}" disabled></div>
+    <div class="field"><label>Title</label><input id="tkTitle" value="${esc(t?.title||'')}" placeholder="What needs to be done?"></div>
+    <div class="field-row">
+      <div class="field"><label>Status</label><select id="tkStatus">${Object.entries(TASK_STATUS).map(([k,v])=>`<option value="${k}" ${t?.status===k?'selected':''}>${v[0]}</option>`).join('')}</select></div>
+      <div class="field"><label>Priority</label><select id="tkPrio">${Object.entries(TASK_PRIO).map(([k,v])=>`<option value="${k}" ${t?.priority===k?'selected':''}>${v[0]}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>Progress (%)</label><input value="${num(t?.progress)||0}% — adjusts automatically from approved progress" disabled></div>
+    <div class="field"><label>Visibility</label><select id="tkVis">${Object.entries(TASK_VIS).map(([k,v])=>`<option value="${k}" ${t?.visibility===k?'selected':''}>${v[0]}</option>`).join('')}</select>
+      <small class="muted" style="font-size:10px;display:block;margin-top:4px">Private — only you · Public — all board users · Shared — selected board users</small></div>
+    <div class="field" id="tkShareBox" style="display:none"><label>Share with board users</label>
+      <div style="max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:8px">${taskUsers.length?taskUsers.map(u=>`<label style="display:flex;gap:8px;align-items:center;font-size:12px;padding:3px 0"><input type="checkbox" class="tkShare" value="${u.id}" ${(t?.shared_with||[]).map(String).includes(String(u.id))?'checked':''}> ${esc(u.name)}</label>`).join(''):'<span class="muted" style="font-size:11px">No board users exist yet.</span>'}</div></div>
+    <div class="field"><label>Task details</label><textarea id="tkDetails" rows="3" placeholder="Description, links, acceptance criteria…">${esc(t?.details||'')}</textarea></div>
+    <div class="modal-actions"><button class="btn" id="tkClear" type="button">Clear</button>${isEdit?'<button class="btn" data-close>Cancel</button>':''}<button class="btn dark" id="tkSave">${isEdit?'Save changes':'Create task'}</button></div>`);
+  const visSel=ov.querySelector('#tkVis'),shareBox=ov.querySelector('#tkShareBox');
+  const sync=()=>shareBox.style.display=visSel.value==='shared'?'block':'none';
+  visSel.onchange=sync;sync();
+  ov.querySelector('#tkClear').onclick=()=>{ov.querySelector('#tkTitle').value='';ov.querySelector('#tkDetails').value='';ov.querySelector('#tkStatus').value='active';ov.querySelector('#tkPrio').value='medium';visSel.value='private';ov.querySelectorAll('.tkShare').forEach(c=>c.checked=false);sync()};
+  ov.querySelector('#tkSave').onclick=async()=>{
+    const payload={title:ov.querySelector('#tkTitle').value,status:ov.querySelector('#tkStatus').value,priority:ov.querySelector('#tkPrio').value,visibility:visSel.value,shared_with:[...ov.querySelectorAll('.tkShare:checked')].map(c=>c.value),details:ov.querySelector('#tkDetails').value};
+    try{
+      if(isEdit){await mutate('tasks/'+t.id,{method:'PATCH',body:JSON.stringify(payload)});toast('Task updated.')}
+      else{const r=await mutate('tasks',{method:'POST',body:JSON.stringify(payload)});toast('Task created — '+(r.code||'done'))}
+      ov.remove();renderAdmin();
+    }catch(e){toast(e.message)}
+  };
+}
+async function taskDetailModal(id){
+  const ov=modal(`<h2>Task details</h2><div id="tdBody">${loaderHtml('Loading…')}</div>`,'');
+  const body=ov.querySelector('#tdBody');
+  const draw=async()=>{
+    try{
+      const d=await api('tasks/'+id);
+      const t=d.task,posts=d.posts||[];
+      const author=(state.user&&state.user.kind==='user')?(t.created_by_kind==='user'&&String(t.created_by_id)===String(state.user.id)):(t.created_by_kind!=='user'&&String(t.created_by_id)===String(state.user.id));
+      body.innerHTML=`
+        <div class="detail-head"><div><h2 style="font-size:17px">${esc(t.title)}</h2><p>${esc(t.code)} · by ${esc(t.created_by_name)} · ${fmtDT(t.created_at)}</p></div>${pill(TASK_STATUS,t.status)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${pill(TASK_PRIO,t.priority)}${pill(TASK_VIS,t.visibility)}${t.visibility==='shared'?`<span class="pill blue">${(t.shared_with||[]).length} shared</span>`:''}</div>
+        <div class="meta"><span>Progress</span><b>${t.progress}%</b></div>
+        <div class="progress"><i style="width:${Math.min(100,t.progress)}%"></i></div>
+        ${t.details?`<p style="font-size:12.5px;line-height:1.6;color:#444;margin:10px 0 0">${esc(t.details)}</p>`:''}
+        <div class="section-head" style="margin-top:14px"><h2>Progress updates</h2><span class="muted">${posts.filter(pp=>pp.approved).length} approved · everyone with access sees approved posts</span></div>
+        <div class="tposts">${posts.length?posts.map(pp=>`
+          <div class="tpost ${pp.approved?'ok':''}">
+            <div class="tp-head"><b>${esc(pp.user_name)}</b>${pp.approved?`<span class="pill green">+${num(pp.add_progress)}%${pp.approved_by_name?' · by '+esc(pp.approved_by_name):''}</span>`:'<span class="pill yellow">Pending</span>'}<time>${fmtDT(pp.created_at)}</time></div>
+            <p>${esc(pp.note)}</p>
+            ${!pp.approved&&author&&can('tasks','edit')?`<div class="tp-act"><input type="number" min="1" max="100" placeholder="% e.g. 10" data-add="${pp.id}"><button class="btn small dark" data-approve="${pp.id}">Approve</button></div>`:''}
+          </div>`).join(''):'<div class="empty">No progress posts yet.</div>'}</div>
+        <div class="field" style="margin-top:12px"><label>Post your progress</label><textarea id="tdNote" rows="2" placeholder="What did you complete?"></textarea></div>
+        <div class="modal-actions">
+          ${author&&can('tasks','edit')?'<button class="btn" id="tdEdit">Edit task</button>':''}
+          ${author&&can('tasks','delete')?'<button class="btn danger" id="tdDel">Delete</button>':''}
+          <button class="btn" data-close>Close</button>
+          <button class="btn dark" id="tdPost">Post progress</button>
+        </div>`;
+      ov.querySelector('#tdPost').onclick=async()=>{const ta=ov.querySelector('#tdNote');const note=ta.value.trim();if(!note)return toast('Write something first.');try{await mutate('tasks/'+id+'/progress',{method:'POST',body:JSON.stringify({note})});toast('Progress posted for approval.');draw()}catch(e){toast(e.message)}};
+      body.querySelectorAll('[data-approve]').forEach(b=>b.onclick=async()=>{
+        const inp=body.querySelector('[data-add="'+b.dataset.approve+'"]');
+        const add=Math.round(num(inp&&inp.value));
+        if(!(add>0&&add<=100))return toast('Enter a % between 1 and 100.');
+        try{const r=await mutate('tasks/'+id+'/approve',{method:'POST',body:JSON.stringify({post_id:Number(b.dataset.approve),add})});toast('Approved — task progress now '+(r.progress||0)+'%.');draw()}catch(e){toast(e.message)}
+      });
+      const eb=ov.querySelector('#tdEdit');if(eb)eb.onclick=()=>{ov.remove();taskFormModal(t)};
+      const dbx=ov.querySelector('#tdDel');if(dbx)dbx.onclick=async()=>{if(!confirm('Delete this task and all its progress posts?'))return;try{await mutate('tasks/'+id,{method:'DELETE'});ov.remove();toast('Task deleted.');renderAdmin()}catch(e){toast(e.message)}};
+    }catch(e){body.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
+  };
+  await draw();
 }
 
 /* ---------- ADMIN: VAULTIUM (contribution files) ---------- */
