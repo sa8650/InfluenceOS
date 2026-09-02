@@ -33,6 +33,7 @@ const FULL_PERMS=Object.fromEntries(Object.entries(PERM_MODULES).map(([m,acts])=
 const cleanPerms=p=>{const o={};for(const[m,acts]of Object.entries(PERM_MODULES)){o[m]={};for(const a of acts)o[m][a]=!!(p&&p[m]&&p[m][a]);}return o;};
 /* ---------- NOTIFICATIONS (admin & agent inboxes) ---------- */
 const notifyAdmins=(env,kind,title,body,link)=>db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'admin',kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})}).catch(()=>{});
+const notifyBoardTarget=(env,target,kind,title,body,link)=>{const uid=target.kind==='user'?String(target.id):'owner:'+String(target.id);return db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'admin',admin_user_id:uid,kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})}).catch(()=>{})};
 const notifyPartner=(env,pid,kind,title,body,link)=>(!pid?Promise.resolve():db(env,'notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_type:'partner',partner_id:pid,kind:String(kind).slice(0,40),title:String(title).slice(0,120),body:String(body||'').slice(0,300),link:link||null})})).catch(()=>{});
 const PARTNER_TYPES=['youtuber','facebook','tiktoker','instagram','telegram','marketing_agent','agency'];
 const int0=v=>Math.max(0,Math.round(num(v)||0));
@@ -198,13 +199,15 @@ export async function onRequest(context){
     if(path==='auth/session'&&method==='GET')return json({role:s.role,user:currentUser,permissions:currentUser&&currentUser.kind==='user'?{_restricted:true,...P}:null});
 
     if(path==='notifications'&&method==='GET'){
-      const q=s.role==='partner'?'notifications?partner_id=eq.'+s.id+'&user_type=eq.partner&order=created_at.desc&limit=50':'notifications?user_type=eq.admin&order=created_at.desc&limit=50';
+      const mine=s.kind==='user'?'&or=(admin_user_id.is.null,admin_user_id.eq.'+encodeURIComponent(String(s.id))+')':'';
+      const q=s.role==='partner'?'notifications?partner_id=eq.'+s.id+'&user_type=eq.partner&order=created_at.desc&limit=50':'notifications?user_type=eq.admin'+mine+'&order=created_at.desc&limit=50';
       const rows=await db(env,q);
       return json({items:rows,unread:rows.filter(r=>!r.read).length});
     }
     if(path==='notifications/read'&&method==='POST'){
       let b=await body(request);
-      const scope=s.role==='partner'?'notifications?partner_id=eq.'+s.id+'&user_type=eq.partner':'notifications?user_type=eq.admin';
+      const mine=s.kind==='user'?'&or=(admin_user_id.is.null,admin_user_id.eq.'+encodeURIComponent(String(s.id))+')':'';
+      const scope=s.role==='partner'?'notifications?partner_id=eq.'+s.id+'&user_type=eq.partner':'notifications?user_type=eq.admin'+mine;
       await db(env,scope+(b.id?'&id=eq.'+b.id:''),{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({read:true})});
       return json({ok:true});
     }
@@ -267,7 +270,10 @@ export async function onRequest(context){
       if(visibility!=='shared')shared=[];
       let code;for(let i=0;i<15;i++){const c='TSK-'+Array.from(crypto.getRandomValues(new Uint8Array(4))).map(n=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[n%32]).join('');const used=await db(env,`tasks?code=eq.${c}&select=id`);if(!used.length){code=c;break}}
       if(!code)return fail('Could not generate a Task ID — try again.');
-      const [out]=await db(env,'tasks',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code,title:title.slice(0,160),status,priority,visibility,shared_with:shared,details:b.details?String(b.details).slice(0,4000):null,created_by_kind:s.kind==='user'?'user':'owner',created_by_id:String(s.id),created_by_name:await boardName(env,s)})});
+      const author=await boardName(env,s);
+      const [out]=await db(env,'tasks',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code,title:title.slice(0,160),status,priority,visibility,shared_with:shared,details:b.details?String(b.details).slice(0,4000):null,created_by_kind:s.kind==='user'?'user':'owner',created_by_id:String(s.id),created_by_name:author})});
+      if(visibility==='public')notifyAdmins(env,'tasks','New task: '+title.slice(0,80),code+' · created by '+author,'tasks');
+      else if(visibility==='shared')for(const uid of shared){if(s.kind==='user'&&uid===String(s.id))continue;notifyBoardTarget(env,{kind:'user',id:uid},'tasks','New task: '+title.slice(0,80),code+' · created by '+author,'tasks')}
       return json(out,201);
     }
     if(/^tasks\/[^/]+$/.test(path)&&(method==='GET'||method==='PATCH'||method==='DELETE')){
@@ -303,6 +309,8 @@ export async function onRequest(context){
         }
         patch.updated_at=new Date().toISOString();
         await db(env,`tasks?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});
+        if(t.visibility==='public')notifyAdmins(env,'tasks','Task updated: '+patch.title.slice(0,70),t.code+' · updated by '+await boardName(env,s),'tasks');
+        else if(t.visibility==='shared')for(const uid of (Array.isArray(t.shared_with)?t.shared_with:[]).map(String)){if(s.kind==='user'&&uid===String(s.id))continue;notifyBoardTarget(env,{kind:'user',id:uid},'tasks','Task updated: '+patch.title.slice(0,70),t.code+' · updated by '+await boardName(env,s),'tasks')}
         return json({ok:true});
       }
       if(method==='DELETE'){
@@ -321,7 +329,10 @@ export async function onRequest(context){
       if(!taskVisible(t,s))return fail('Permission denied.',403);
       let b=await body(request),note=String(b.note||'').trim();
       if(!note)return fail('Progress note cannot be empty.');
-      const [out]=await db(env,'task_progress',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({task_id:Number(id),user_kind:s.kind==='user'?'user':'owner',user_id:String(s.id),user_name:await boardName(env,s),note:note.slice(0,2000)})});
+      const poster=await boardName(env,s);
+      const [out]=await db(env,'task_progress',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({task_id:Number(id),user_kind:s.kind==='user'?'user':'owner',user_id:String(s.id),user_name:poster,note:note.slice(0,2000)})});
+      if(t.visibility!=='private'&&(t.created_by_kind!==(s.kind==='user'?'user':'owner')||String(t.created_by_id)!==String(s.id)))
+        notifyBoardTarget(env,{kind:t.created_by_kind==='user'?'user':'owner',id:t.created_by_id},'tasks','Progress posted: '+t.title.slice(0,70),poster+' posted on '+t.code+' — approval needed','tasks');
       return json(out,201);
     }
     if(/^tasks\/[^/]+\/approve$/.test(path)&&method==='POST'){
@@ -338,6 +349,8 @@ export async function onRequest(context){
       await db(env,`task_progress?id=eq.${pp.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({approved:true,add_progress:add,approved_at:new Date().toISOString(),approved_by_name:await boardName(env,s)})});
       const newp=Math.min(100,num(t.progress)+add);
       await db(env,`tasks?id=eq.${id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({progress:newp,updated_at:new Date().toISOString()})});
+      if(t.visibility!=='private'&&(pp.user_kind!==(s.kind==='user'?'user':'owner')||String(pp.user_id)!==String(s.id)))
+        notifyBoardTarget(env,{kind:pp.user_kind==='user'?'user':'owner',id:pp.user_id},'tasks','Progress approved: +'+add+'%',t.title.slice(0,80)+' · '+t.code+' — now '+newp+'%','tasks');
       return json({ok:true,progress:newp});
     }
 
