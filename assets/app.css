@@ -643,3 +643,14 @@ body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{
 .mst.dlv,.mst.sent{color:#9aa4b2}
 .msg.me .mst.seen{color:#7de2a8}
 .msg.me .mst.dlv,.msg.me .mst.sent{color:rgba(255,255,255,.7)}
+
+/* ---------- TASK MANAGER ---------- */
+.tposts{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;margin-top:6px}
+.tpost{border:1px solid var(--border);border-radius:10px;padding:9px 11px;background:#fafafa}
+.tpost.ok{background:#f2fbf6;border-color:#d7eede}
+.tp-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tp-head b{font-size:12px}
+.tp-head time{font-size:9.5px;color:#999;margin-left:auto}
+.tpost p{margin:6px 0 0;font-size:12px;line-height:1.55;color:#333;white-space:pre-wrap;word-break:break-word}
+.tp-act{display:flex;gap:7px;margin-top:8px}
+.tp-act input{width:110px;padding:6px 9px;font-size:12px}
