@@ -796,3 +796,4 @@ body.partner-mode #toast{
 body.partner-mode .fv-body{background:var(--color-slate);border-color:var(--color-border);
   border-radius:var(--radius-md)}
 body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{color:var(--color-text)}
+
