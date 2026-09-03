@@ -139,7 +139,51 @@ a{color:inherit;text-decoration:none}
 
 /* ---------- RESPONSIVE ---------- */
 @media(max-width:1050px){.grid,.kpi-grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}.project-grid{grid-template-columns:repeat(2,1fr)}.sidebar{width:210px}.main{margin-left:210px;width:calc(100% - 210px)}.hero{grid-template-columns:1fr;padding-top:56px}.feat-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:700px){.sidebar{display:none}.main{margin-left:0;width:100%;padding:18px}.grid,.kpi-grid,.project-grid,.feat-grid{grid-template-columns:1fr}.top{align-items:flex-start;gap:15px;flex-direction:column}.table-card{overflow:auto}.table,.view-table{min-width:650px}.hero h1{font-size:32px}.field-row{grid-template-columns:1fr}.acct-row{grid-template-columns:1fr}}
+
+/* ---------- MOBILE NAV DRAWER + FULL RESPONSIVENESS ---------- */
+/* 3-line toggle (hidden on desktop) */
+.navtoggle{display:none}
+.navbackdrop{display:none}
+@media(max-width:900px){
+  .navtoggle{display:inline-flex;flex-direction:column;justify-content:center;gap:5px;width:42px;height:42px;padding:10px;position:fixed;top:12px;left:12px;z-index:40;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.08);cursor:pointer}
+  .navtoggle span{display:block;height:2px;width:100%;background:#111;border-radius:2px;transition:transform .18s ease,opacity .18s ease}
+  body.nav-open .navtoggle span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+  body.nav-open .navtoggle span:nth-child(2){opacity:0}
+  body.nav-open .navtoggle span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+  /* drawer: slides in from the left, never wider than 50% of the screen */
+  .sidebar{width:min(50vw,300px);transform:translateX(-105%);transition:transform .22s ease;z-index:42;padding-top:74px;overflow-y:auto}
+  body.nav-open .sidebar{transform:none;box-shadow:14px 0 40px rgba(0,0,0,.25)}
+  .navbackdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:41;opacity:0;pointer-events:none;transition:opacity .2s ease}
+  body.nav-open .navbackdrop{opacity:1;pointer-events:auto}
+  body.nav-open{overflow:hidden}
+  /* page: full width, clears the floating toggle */
+  .main{margin-left:0;width:100%;padding:66px 16px 22px}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .two{grid-template-columns:1fr}
+  .top{align-items:flex-start;gap:12px;flex-direction:column}
+  .table-card{overflow:auto}
+  .table,.view-table{min-width:640px}
+  .modal{width:94vw}
+  .modal.wide{max-width:94vw}
+  /* admin helpdesk 3-column → stacked */
+  .helpdesk2.hd3{grid-template-columns:1fr}
+  .hd3 .hdlist{max-height:250px;border-right:0;border-bottom:1px solid var(--border)}
+  .section-box.hdpage{height:min(84dvh,720px)}
+}
+@media(max-width:700px){
+  .grid,.kpi-grid,.project-grid,.feat-grid{grid-template-columns:1fr}
+  .main{padding:64px 12px 18px}
+  .hero{padding:60px 16px 40px}
+  .hero h1{font-size:30px}
+  .hero .stats{gap:20px}
+  .field-row{grid-template-columns:1fr}
+  .acct-row{grid-template-columns:1fr}
+  .land-head .in{padding:12px 14px}
+  .land-foot .in{padding:20px 14px}
+  .toolbar h2{font-size:15px}
+  .modal{padding:16px}
+  .actions-cell{white-space:nowrap}
+}
 
 /* ---------- HELPDESK CHAT + NAV BADGE ---------- */
 .navbadge{display:inline-block;min-width:17px;padding:1px 5px;margin-left:5px;border-radius:99px;background:#c62828;color:#fff;font-size:10px;font-weight:700;text-align:center;vertical-align:middle}
@@ -656,4 +700,3 @@ body.partner-mode .fv-pre,body.partner-mode .fv-doc,body.partner-mode .fv-sheet{
 .tp-act input{width:110px;padding:6px 9px;font-size:12px}
 .tpost.rej{background:#fdf3f2;border-color:#f3d0cb}
 .tp-fb{margin:5px 0 0;font-size:11.5px;color:#c0392b;font-style:italic}
-
