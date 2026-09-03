@@ -205,6 +205,15 @@ function notifListHtml(items){
     <time>${fmtDT(n.created_at)}</time></div>`).join(''):'<div class="empty">No notifications yet.</div>';
 }
 function notifBellHtml(){return `<button class="notifbtn" id="notifBtn">🔔<span class="navbadge" id="notifBadge" style="display:none"></span></button>`}
+/* ══ MOBILE NAV DRAWER — 3-line toggle, drawer slides in from the left (≤50% wide) ══ */
+const navDrawerChrome=`<button class="navtoggle" id="navToggle" aria-label="Open menu" aria-expanded="false"><span></span><span></span><span></span></button><div class="navbackdrop" id="navBackdrop"></div>`;
+function wireNavDrawer(){
+  const t=$('#navToggle'),b=$('#navBackdrop');if(!t||!b)return;
+  const set=open=>{document.body.classList.toggle('nav-open',open);t.setAttribute('aria-expanded',String(open))};
+  t.onclick=()=>set(!document.body.classList.contains('nav-open'));
+  b.onclick=()=>set(false);
+  const sb=$('.sidebar');if(sb)sb.addEventListener('click',e=>{if(e.target.closest('.nav button'))set(false)});
+}
 function notificationsModal(){
   const ov=modal(`<h2>🔔 Notifications</h2><p>Latest updates for your account — click one to open the related page.</p>
     <div id="notifList">${loaderHtml('Loading…')}</div>
@@ -517,6 +526,7 @@ function adminApp(){
   const nav=[['dashboard','▦','Dashboard'],['partners','◉','Agents'],['projects','◆','Projects'],['contribute','⇧','Contribute'],['tasks','☑','Task Manager'],['allocations','◌','Allocations'],['payments','$','Payments'],['performance','◫','Performance'],['vaultium','▣','Vaultium'],['connectx','✉','ConnectX'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>'],['profile','◉','User Profile'],['users','☷','User Control']]
     .filter(([k])=>!NAV_PERM_MODULE[k]||can(NAV_PERM_MODULE[k],'show'));
   app.innerHTML=`<div class="app">
+    ${navDrawerChrome}
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>powered by DoxTox</small></div>
       ${notifBellHtml()}
@@ -530,6 +540,7 @@ function adminApp(){
   </div>`;
   document.querySelectorAll('.nav button[data-v]').forEach(b=>b.onclick=()=>{aView=b.dataset.v;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));renderAdmin()});
   $('#outBtn').onclick=logout;
+  wireNavDrawer();
   wire('notifBtn',()=>notificationsModal());
   refreshNotifs();
   api('helpdesk').then(d=>updateHdBadge(d.totalUnread||0)).catch(()=>{});
@@ -1542,6 +1553,7 @@ function partnerApp(){
   document.title='InfluenceOS — Agent';
   const nav=[['profile','◉','Profile'],['team','☰','My Team'],['allocations','◌','Allocations'],['contribute','⇧','Contribute'],['projects','◆','Projects'],['payments','$','Payments'],['performance','◫','Performance'],['helpdesk','✉','HelpDesk <span class="navbadge" id="hdBadge" style="display:none"></span>']];
   app.innerHTML=`<div class="app">
+    ${navDrawerChrome}
     <aside class="sidebar">
       <div class="logo">Influence<span>OS</span><small>agent portal · DoxTox</small></div>
       ${notifBellHtml()}
@@ -1553,6 +1565,7 @@ function partnerApp(){
   </div>`;
   document.querySelectorAll('.nav button[data-v]').forEach(b=>b.onclick=()=>{pView=b.dataset.v;document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x===b));renderPartner()});
   $('#outBtn').onclick=logout;
+  wireNavDrawer();
   wire('notifBtn',()=>notificationsModal());
   refreshNotifs();
   api('helpdesk').then(d=>updateHdBadge(d.unread||0)).catch(()=>{});
